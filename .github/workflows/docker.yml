@@ -3,6 +3,10 @@ on:
   push:
     branches: [main, master]
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: beastvault-api
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -10,28 +14,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Lowercase owner
+        run: |
+          echo "OWNER_LC=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3
         with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
+          registry: ${{ env.REGISTRY }}
+          username: ${{ env.OWNER_LC }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build & Push (API)
+      - name: Build & Push
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./Dockerfile
-          # 👇 Para aislar el problema, prueba primero solo amd64; si va, vuelve a multi-arch
-          platforms: linux/amd64
+          file: ./Dockerfile # cuidado con la D mayúscula
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/beastvault-api:latest
-            ghcr.io/${{ github.repository_owner }}/beastvault-api:sha-${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
           provenance: false
           sbom: false
-        env:
-          # 👇 Fuerza logs de buildkit en texto plano para verlos en la UI
-          BUILDKIT_PROGRESS: plain
