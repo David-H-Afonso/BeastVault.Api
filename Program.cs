@@ -56,7 +56,20 @@ app.MapMaintenanceEndpoints();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    await db.Database.MigrateAsync();
+
+    // Asegurar que la base de datos esté creada con el esquema actual
+    try
+    {
+        // Este método es más seguro que MigrateAsync, ya que solo crea la base de datos
+        // si no existe, pero no intenta aplicar migraciones adicionales
+        await db.Database.EnsureCreatedAsync();
+        Console.WriteLine("Base de datos verificada correctamente.");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Error al verificar la base de datos: {ex.Message}");
+    }
+
     var storage = scope.ServiceProvider.GetRequiredService<BeastVault.Api.Infrastructure.Services.FileStorageService>();
     storage.EnsureVault();
 
@@ -77,13 +90,13 @@ namespace BeastVault.Api.Extensions
     {
         public static IServiceCollection AddAppDbContext(this IServiceCollection services, IConfiguration config)
         {
-            // Usar siempre las mismas rutas que Electron para consistencia
-            var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            var defaultDbPath = Path.Combine(appDataPath, "BeastVault", "beastvault.db");
+            string dbPath = EnvironmentUtils.GetDatabasePath();
 
-            // Priorizar variable de entorno DB_PATH para Electron, pero usar ruta consistente por defecto
-            var envDbPath = Environment.GetEnvironmentVariable("DB_PATH");
-            string dbPath = !string.IsNullOrEmpty(envDbPath) ? envDbPath : defaultDbPath;
+            // Si estamos en Docker, notificar la ruta usada
+            if (EnvironmentUtils.IsRunningInDocker())
+            {
+                Console.WriteLine($"Running in Docker, using database path: {dbPath}");
+            }
 
             var configuredCs = config.GetConnectionString("Default");
 
@@ -114,13 +127,13 @@ namespace BeastVault.Api.Extensions
         {
             services.AddScoped<FileStorageService>(sp =>
             {
-                // Usar siempre las mismas rutas que Electron para consistencia
-                var documentsPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-                var defaultStoragePath = Path.Combine(documentsPath, "BeastVault");
+                string basePath = EnvironmentUtils.GetPokemonFilesPath();
 
-                // Priorizar variable de entorno STORAGE_PATH para Electron, pero usar ruta consistente por defecto
-                var envStoragePath = Environment.GetEnvironmentVariable("STORAGE_PATH");
-                string basePath = !string.IsNullOrEmpty(envStoragePath) ? envStoragePath : defaultStoragePath;
+                // Si estamos en Docker, notificar la ruta usada
+                if (EnvironmentUtils.IsRunningInDocker())
+                {
+                    Console.WriteLine($"Running in Docker, using Pokemon files path: {basePath}");
+                }
 
                 // Ensure the base directory exists
                 if (!Directory.Exists(basePath))

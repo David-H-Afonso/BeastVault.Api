@@ -203,8 +203,8 @@ public class TextSearchSpecification : IPokemonSpecification
 
     public IQueryable<PokemonEntity> Apply(IQueryable<PokemonEntity> query)
     {
-        return query.Where(p => 
-            (p.Nickname ?? "").Contains(_searchText) || 
+        return query.Where(p =>
+            (p.Nickname ?? "").Contains(_searchText) ||
             p.OtName.Contains(_searchText) ||
             (p.Notes ?? "").Contains(_searchText));
     }
@@ -228,10 +228,10 @@ public class LevelRangeSpecification : IPokemonSpecification
     {
         if (_minLevel.HasValue)
             query = query.Where(p => p.Level >= _minLevel.Value);
-            
+
         if (_maxLevel.HasValue)
             query = query.Where(p => p.Level <= _maxLevel.Value);
-            
+
         return query;
     }
 }

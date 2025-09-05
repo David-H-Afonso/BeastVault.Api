@@ -1,17 +1,17 @@
 /**
  * BEAST VAULT API - TypeScript Interfaces
- * 
+ *
  * Este archivo contiene TODAS las interfaces TypeScript para el frontend
  * que corresponden exactamente a los endpoints y DTOs de la API de Beast Vault.
- * 
+ *
  * Generado automáticamente el: 17 de Agosto, 2025
- * 
+ *
  * NUEVAS FUNCIONALIDADES:
  * - ✅ Detección automática de generaciones (OriginGeneration vs CapturedGeneration)
  * - ✅ Formas dinámicas basadas en Mega Stones y Gigantamax
  * - ✅ Flags CanGigantamax y HasMegaStone para mejor experiencia visual
  * - ✅ Soporte completo para archivos PKM legacy (.pk1, .pk2, etc.)
- * 
+ *
  * IMPORTANTE: Este archivo debe actualizarse cada vez que cambien los endpoints o DTOs
  */
 
@@ -19,10 +19,30 @@
 // TIPOS BÁSICOS Y ENUMS
 // ===================================
 
-export type ImportStatus = 'imported' | 'duplicate' | 'error';
+export type ImportStatus = "imported" | "duplicate" | "error";
 
-export type FileFormat = 'pk1' | 'pk2' | 'pk3' | 'pk4' | 'pk5' | 'pk6' | 'pk7' | 'pk8' | 'pk9' | 
-                         'pb7' | 'pb8' | 'ek1' | 'ek2' | 'ek3' | 'ek4' | 'ek5' | 'ek6' | 'ek7' | 'ek8' | 'ek9' | 'ekx';
+export type FileFormat =
+  | "pk1"
+  | "pk2"
+  | "pk3"
+  | "pk4"
+  | "pk5"
+  | "pk6"
+  | "pk7"
+  | "pk8"
+  | "pk9"
+  | "pb7"
+  | "pb8"
+  | "ek1"
+  | "ek2"
+  | "ek3"
+  | "ek4"
+  | "ek5"
+  | "ek6"
+  | "ek7"
+  | "ek8"
+  | "ek9"
+  | "ekx";
 
 export enum TypeFilterMode {
   HasAnyType = 0,
@@ -30,7 +50,7 @@ export enum TypeFilterMode {
   HasOnlyTypes = 2,
   PrimaryTypeOnly = 3,
   ExactTypeOrder = 4,
-  BothTypesAnyOrder = 5
+  BothTypesAnyOrder = 5,
 }
 
 export enum PokemonSortField {
@@ -40,27 +60,27 @@ export enum PokemonSortField {
   Nickname = 3,
   Level = 4,
   Pokeball = 7,
-  
+
   // Temporarily disabled sort fields (not in metadata, needs fixes)
-  SpeciesName = 2,          // Requires PKHeX species name resolution
-  OriginGeneration = 5,     // Complex generation mapping issues
-  CapturedGeneration = 6,   // Complex generation mapping issues
-  Gender = 8,               // Database type conversion issues
-  IsShiny = 9,              // Boolean to int conversion issues
-  Form = 10,                // Field mapping issues
-  CreatedAt = 11,           // No actual CreatedAt field in database
-  Favorite = 12             // Boolean to int conversion issues
+  SpeciesName = 2, // Requires PKHeX species name resolution
+  OriginGeneration = 5, // Complex generation mapping issues
+  CapturedGeneration = 6, // Complex generation mapping issues
+  Gender = 8, // Database type conversion issues
+  IsShiny = 9, // Boolean to int conversion issues
+  Form = 10, // Field mapping issues
+  CreatedAt = 11, // No actual CreatedAt field in database
+  Favorite = 12, // Boolean to int conversion issues
 }
 
 export enum SortDirection {
   Ascending = 0,
-  Descending = 1
+  Descending = 1,
 }
 
 export enum Gender {
   Unknown = 0,
   Male = 1,
-  Female = 2
+  Female = 2,
 }
 
 // ===================================
@@ -495,7 +515,7 @@ export interface AdvancedPokemonListResponse {
 }
 
 export interface HealthCheckResponse {
-  status: 'ok';
+  status: "ok";
 }
 
 export interface WipeDatabaseResponse {
@@ -571,16 +591,33 @@ export const API_CONSTANTS = {
   MAX_LEVEL: 100,
   MIN_LEVEL: 1,
   SUPPORTED_FILE_EXTENSIONS: [
-    '.pk1', '.pk2', '.pk3', '.pk4', '.pk5', '.pk6', '.pk7', '.pk8', '.pk9',
-    '.pb7', '.pb8',
-    '.ek1', '.ek2', '.ek3', '.ek4', '.ek5', '.ek6', '.ek7', '.ek8', '.ek9',
-    '.ekx'
+    ".pk1",
+    ".pk2",
+    ".pk3",
+    ".pk4",
+    ".pk5",
+    ".pk6",
+    ".pk7",
+    ".pk8",
+    ".pk9",
+    ".pb7",
+    ".pb8",
+    ".ek1",
+    ".ek2",
+    ".ek3",
+    ".ek4",
+    ".ek5",
+    ".ek6",
+    ".ek7",
+    ".ek8",
+    ".ek9",
+    ".ekx",
   ] as const,
   POKEMON_GENDERS: {
     UNKNOWN: 0,
     MALE: 1,
-    FEMALE: 2
-  } as const
+    FEMALE: 2,
+  } as const,
 } as const;
 
 // ===================================
@@ -589,34 +626,34 @@ export const API_CONSTANTS = {
 
 export type PokemonEndpoints = {
   // GET endpoints
-  '/pokemon': {
+  "/pokemon": {
     query: PokemonQuery;
     response: PagedResult<PokemonListItemDto>;
   };
-  '/pokemon/advanced': {
+  "/pokemon/advanced": {
     query: AdvancedPokemonQuery;
     response: AdvancedPokemonListResponse;
   };
-  '/pokemon/metadata': {
+  "/pokemon/metadata": {
     response: PokemonMetadata;
   };
-  '/pokemon/{id}': {
+  "/pokemon/{id}": {
     params: { id: number };
     response: PokemonDetailDto;
   };
-  '/pokemon/{id}/showdown': {
+  "/pokemon/{id}/showdown": {
     params: { id: number };
     response: string; // text/plain
   };
-  '/pokemon/compare/{id1}/{id2}': {
+  "/pokemon/compare/{id1}/{id2}": {
     params: { id1: number; id2: number };
     response: PokemonComparisonResult;
   };
-}
+};
 
 // PATCH endpoints
 export interface PatchEndpoints {
-  '/pokemon/{id}': {
+  "/pokemon/{id}": {
     params: { id: number };
     body: UpdatePokemonDto;
     response: void; // 204 No Content
@@ -625,80 +662,80 @@ export interface PatchEndpoints {
 
 // DELETE endpoints
 export interface DeleteEndpoints {
-  '/pokemon/{id}/database': {
+  "/pokemon/{id}/database": {
     params: { id: number };
     response: DeletePokemonResponse;
   };
-  '/pokemon/{id}/backup': {
+  "/pokemon/{id}/backup": {
     params: { id: number };
     response: DeletePokemonResponse;
   };
-};
+}
 
 export type ImportEndpoints = {
-  '/import': {
+  "/import": {
     body: FormData; // multipart/form-data with files
     response: ImportResultDto[];
   };
 };
 
 export type FileEndpoints = {
-  '/files/{id}': {
+  "/files/{id}": {
     params: { id: number };
     response: Blob; // application/octet-stream
   };
-  '/export/{pokemonId}': {
+  "/export/{pokemonId}": {
     params: { pokemonId: number };
     response: Blob; // application/octet-stream
   };
-  '/export/database/{pokemonId}': {
+  "/export/database/{pokemonId}": {
     params: { pokemonId: number };
     response: Blob; // application/octet-stream
   };
 };
 
 export type ScanEndpoints = {
-  '/scan/directory': {
-    method: 'POST';
+  "/scan/directory": {
+    method: "POST";
     response: ScanResult;
   };
-  '/scan/status': {
+  "/scan/status": {
     response: ScanStatus;
   };
 };
 
 export type MaintenanceEndpoints = {
-  '/maintenance/sync': {
-    method: 'POST';
+  "/maintenance/sync": {
+    method: "POST";
     response: SyncResult;
   };
-  '/maintenance/analyze/{pokemonId}': {
+  "/maintenance/analyze/{pokemonId}": {
     params: { pokemonId: number };
     response: FileAnalysisResult;
   };
 };
 
 export type AdminEndpoints = {
-  '/admin/wipe-database': {
-    method: 'POST';
+  "/admin/wipe-database": {
+    method: "POST";
     response: WipeDatabaseResponse;
   };
 };
 
 export type HealthEndpoints = {
-  '/health': {
+  "/health": {
     response: HealthCheckResponse;
   };
 };
 
 // Tipo unión de todos los endpoints
-export type AllEndpoints = PokemonEndpoints & 
-                          ImportEndpoints & 
-                          FileEndpoints & 
-                          ScanEndpoints & 
-                          MaintenanceEndpoints & 
-                          AdminEndpoints & 
-                          HealthEndpoints;
+export type AllEndpoints = PokemonEndpoints &
+  ImportEndpoints &
+  FileEndpoints &
+  ScanEndpoints &
+  MaintenanceEndpoints &
+  AdminEndpoints &
+  HealthEndpoints;
 
 // ===================================
 // COMENTARIOS FINALES
@@ -706,31 +743,31 @@ export type AllEndpoints = PokemonEndpoints &
 
 /**
  * NOTAS IMPORTANTES PARA EL FRONTEND:
- * 
+ *
  * 1. PAGINACIÓN: Usar skip/take para paginación. El máximo recomendado es take=100.
- * 
+ *
  * 2. FECHAS: Todas las fechas se devuelven como strings ISO (ejemplo: "2025-08-17T15:30:00Z").
  *    Usar new Date(dateString) para convertir a objetos Date de JavaScript.
- * 
- * 3. ARCHIVOS: Los endpoints de archivos devuelven Blobs. Usar URL.createObjectURL() 
+ *
+ * 3. ARCHIVOS: Los endpoints de archivos devuelven Blobs. Usar URL.createObjectURL()
  *    para crear URLs de descarga.
- * 
- * 4. FORMDATA: El endpoint de import requiere FormData con archivos. 
+ *
+ * 4. FORMDATA: El endpoint de import requiere FormData con archivos.
  *    Ejemplo: const formData = new FormData(); formData.append('files', file);
- * 
- * 5. FILTROS AVANZADOS: Usar AdvancedPokemonQuery para consultas complejas con 
+ *
+ * 5. FILTROS AVANZADOS: Usar AdvancedPokemonQuery para consultas complejas con
  *    filtrado por tipos, generaciones, ordenamiento múltiple, etc.
- * 
+ *
  * 6. TIPOS OPCIONALES: Los campos marcados con ? son opcionales y pueden ser undefined.
- * 
+ *
  * 7. ENUMS: Los enums numéricos deben usarse con sus valores numéricos, no los nombres.
- * 
+ *
  * 8. ERRORES: Todos los endpoints pueden devolver errores HTTP estándar (400, 404, 500).
  *    Manejar estos errores apropiadamente en el frontend.
- * 
- * 9. CORS: Asegúrate de que el frontend esté configurado para hacer peticiones al puerto 
+ *
+ * 9. CORS: Asegúrate de que el frontend esté configurado para hacer peticiones al puerto
  *    correcto de la API (generalmente https://localhost:7xxx o http://localhost:5xxx).
- * 
- * 10. TAGS: Los endpoints están organizados por tags (Pokemon, Import, Files, etc.) 
+ *
+ * 10. TAGS: Los endpoints están organizados por tags (Pokemon, Import, Files, etc.)
  *     para mejor organización en Swagger/OpenAPI.
  */

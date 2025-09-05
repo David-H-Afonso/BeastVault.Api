@@ -16,7 +16,7 @@ public static class PokemonQueryService
     /// Build and apply a complete Pokemon query with filters and sorting
     /// </summary>
     public static IQueryable<PokemonEntity> BuildQuery(
-        IQueryable<PokemonEntity> baseQuery, 
+        IQueryable<PokemonEntity> baseQuery,
         AdvancedPokemonQuery queryParams)
     {
         // Apply specifications (filters)
@@ -132,7 +132,7 @@ public static class PokemonQueryService
     /// Apply all specifications to the query
     /// </summary>
     private static IQueryable<PokemonEntity> ApplySpecifications(
-        IQueryable<PokemonEntity> query, 
+        IQueryable<PokemonEntity> query,
         IEnumerable<IPokemonSpecification> specifications)
     {
         var compositeSpec = new CompositeSpecification(specifications);
@@ -143,11 +143,11 @@ public static class PokemonQueryService
     /// Apply sorting to the query
     /// </summary>
     private static IQueryable<PokemonEntity> ApplySorting(
-        IQueryable<PokemonEntity> query, 
+        IQueryable<PokemonEntity> query,
         AdvancedPokemonQuery queryParams)
     {
         var sortOptions = queryParams.GetAllSortOptions().ToList();
-        
+
         if (sortOptions.Any())
         {
             return PokemonSortingService.ApplyMultipleSort(query, sortOptions);

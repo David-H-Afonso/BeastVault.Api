@@ -124,7 +124,40 @@ BeastVault.Api/
 ├── Program.cs
 ├── BeastVault.Api.csproj
 ├── README.md
+├── docker-compose.yml
+├── dockerfile
 ```
+
+## Docker Deployment
+
+BeastVault can be run as a Docker container, making it easy to deploy on a server. The application automatically detects if it's running in a Docker environment and uses appropriate paths for storage.
+
+### Running with Docker
+
+1. Build and run using Docker Compose:
+
+```bash
+docker-compose up -d
+```
+
+2. The API will be accessible at `http://your-server:8080`
+
+### Docker Storage Paths
+
+When running in Docker, the application uses the following paths:
+
+- **Database:** `/app/data/beastvault.db` (persisted as a Docker volume)
+- **Pokemon Files:** `/app/pokemon/` (persisted as a Docker volume)
+- **Backup Files:** `/app/pokemon/backup/` (included in the Pokemon volume)
+
+### Docker Volumes
+
+Docker Compose creates two named volumes:
+
+- `beastvault-data`: For the database
+- `beastvault-pokemon`: For Pokemon files
+
+These volumes ensure your data persists even if the container is removed or recreated.
 
 **Data Storage Location:**
 The application uses two separate directories for optimal security and usability:

@@ -152,12 +152,12 @@ public static class PokemonFormService
     {
         // Use the CanGigantamax flag from PKHeX
         var gigantamaxSpecies = GetGigantamaxSpecies();
-        
+
         // Check if the species can Gigantamax and has the CanGigantamax flag set
         return gigantamaxSpecies.Contains(pokemon.SpeciesId) && pokemon.CanGigantamax;
     }    /// <summary>
-    /// Get the Gigantamax form for a species
-    /// </summary>
+         /// Get the Gigantamax form for a species
+         /// </summary>
     private static int GetGigantamaxForm(int speciesId)
     {
         // Most Gigantamax forms are form 0 but with special rendering

@@ -1,0 +1,23 @@
+version: "3"
+
+services:
+  beastvault-api:
+    build:
+      context: .
+      dockerfile: dockerfile
+    container_name: beastvault-api
+    ports:
+      - "8080:8080"
+    volumes:
+      - beastvault-data:/app/data
+      - beastvault-pokemon:/app/pokemon
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8080
+    restart: unless-stopped
+
+volumes:
+  beastvault-data:
+    # Volumen para la base de datos
+  beastvault-pokemon:
+    # Volumen para los archivos Pokémon

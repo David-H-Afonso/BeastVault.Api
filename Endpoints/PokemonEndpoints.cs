@@ -260,7 +260,7 @@ namespace BeastVault.Api.Endpoints
                     new { Id = 17, Name = "Fairy" }
                 };
                 var generations = Enumerable.Range(1, 9).Select(g => new { Id = g, Name = $"Generation {g}" }).ToList();
-                
+
                 // Temporarily disabled filters (not working properly):
                 // - Gender filter
                 // - Form filter  

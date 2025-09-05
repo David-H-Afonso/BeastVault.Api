@@ -38,12 +38,12 @@ public static class PokemonSortingService
     /// Apply sorting with direction to a query
     /// </summary>
     private static IOrderedQueryable<PokemonEntity> ApplySort<TKey>(
-        IQueryable<PokemonEntity> query, 
-        Expression<Func<PokemonEntity, TKey>> keySelector, 
+        IQueryable<PokemonEntity> query,
+        Expression<Func<PokemonEntity, TKey>> keySelector,
         SortDirection direction)
     {
-        return direction == SortDirection.Ascending 
-            ? query.OrderBy(keySelector) 
+        return direction == SortDirection.Ascending
+            ? query.OrderBy(keySelector)
             : query.OrderByDescending(keySelector);
     }
 
@@ -53,7 +53,7 @@ public static class PokemonSortingService
     /// Consider creating a computed column or lookup table for production use
     /// </summary>
     private static IOrderedQueryable<PokemonEntity> ApplySortBySpeciesName(
-        IQueryable<PokemonEntity> query, 
+        IQueryable<PokemonEntity> query,
         SortDirection direction)
     {
         // For now, we'll sort by SpeciesId as a proxy for species name
@@ -66,7 +66,7 @@ public static class PokemonSortingService
     /// Sort by origin generation
     /// </summary>
     private static IOrderedQueryable<PokemonEntity> ApplySortByOriginGeneration(
-        IQueryable<PokemonEntity> query, 
+        IQueryable<PokemonEntity> query,
         SortDirection direction)
     {
         // We can create a computed column or use a CASE statement in SQL
@@ -94,7 +94,7 @@ public static class PokemonSortingService
     /// Sort by captured generation (generation where the species was introduced)
     /// </summary>
     private static IOrderedQueryable<PokemonEntity> ApplySortByCapturedGeneration(
-        IQueryable<PokemonEntity> query, 
+        IQueryable<PokemonEntity> query,
         SortDirection direction)
     {
         // Map species to their introduction generation
@@ -121,7 +121,7 @@ public static class PokemonSortingService
     /// Apply multiple sorts to a query (for complex sorting scenarios)
     /// </summary>
     public static IOrderedQueryable<PokemonEntity> ApplyMultipleSort(
-        IQueryable<PokemonEntity> query, 
+        IQueryable<PokemonEntity> query,
         IEnumerable<PokemonSortOptions> sortOptions)
     {
         var sortList = sortOptions.ToList();
@@ -131,7 +131,7 @@ public static class PokemonSortingService
         }
 
         var orderedQuery = ApplySort(query, sortList.First());
-        
+
         foreach (var sortOption in sortList.Skip(1))
         {
             orderedQuery = ApplyThenBy(orderedQuery, sortOption);
@@ -144,7 +144,7 @@ public static class PokemonSortingService
     /// Apply a then-by sort to an already ordered query
     /// </summary>
     private static IOrderedQueryable<PokemonEntity> ApplyThenBy(
-        IOrderedQueryable<PokemonEntity> query, 
+        IOrderedQueryable<PokemonEntity> query,
         PokemonSortOptions options)
     {
         return options.SortBy switch
@@ -167,12 +167,12 @@ public static class PokemonSortingService
     /// Apply then-by sorting with direction
     /// </summary>
     private static IOrderedQueryable<PokemonEntity> ApplyThenBy<TKey>(
-        IOrderedQueryable<PokemonEntity> query, 
-        Expression<Func<PokemonEntity, TKey>> keySelector, 
+        IOrderedQueryable<PokemonEntity> query,
+        Expression<Func<PokemonEntity, TKey>> keySelector,
         SortDirection direction)
     {
-        return direction == SortDirection.Ascending 
-            ? query.ThenBy(keySelector) 
+        return direction == SortDirection.Ascending
+            ? query.ThenBy(keySelector)
             : query.ThenByDescending(keySelector);
     }
 }

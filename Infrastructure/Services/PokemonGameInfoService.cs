@@ -117,13 +117,13 @@ public static class PokemonGameInfoService
         // For legacy formats, derive generation from file format instead of OriginGame
         // because PKHeX assigns default/incorrect OriginGame values for old formats
         var formatGeneration = GetGenerationFromFileFormat(fileFormat);
-        
+
         // If file format indicates a legacy generation, trust that over OriginGame
         if (formatGeneration <= 3)
         {
             return formatGeneration;
         }
-        
+
         // For modern formats (Gen 4+), use OriginGame as it's more reliable
         return GetGameGeneration(originGame);
     }
@@ -136,7 +136,7 @@ public static class PokemonGameInfoService
         return format.ToLower() switch
         {
             "pk1" => 1,
-            "pk2" => 2, 
+            "pk2" => 2,
             "pk3" => 3,
             "pk4" => 4,
             "pk5" => 5,
@@ -158,38 +158,38 @@ public static class PokemonGameInfoService
         {
             // Generation 1 (Red/Blue/Yellow)
             1 or 2 or 3 => 1,
-            
+
             // Generation 2 (Gold/Silver/Crystal) 
             4 or 5 or 7 => 2,
-            
+
             // Generation 3 (Ruby/Sapphire/Emerald/FireRed/LeafGreen)
             8 or 9 or 10 or 11 or 12 or 15 => 3,
-            
+
             // Generation 4 (Diamond/Pearl/Platinum/HeartGold/SoulSilver)
             13 or 14 or 15 or 16 or 17 => 4,
-            
+
             // Generation 5 (Black/White/Black2/White2)
             18 or 19 or 20 or 21 => 5,
-            
+
             // Generation 6 (X/Y/OmegaRuby/AlphaSapphire)
             24 or 25 or 26 or 27 => 6,
-            
+
             // Generation 7 (Sun/Moon/UltraSun/UltraMoon/Let's Go)
             30 or 31 or 32 or 33 or 42 or 43 => 7,
-            
+
             // Generation 8 (Sword/Shield/BDSP/Legends Arceus)
             44 or 45 or 48 or 49 => 8,
-            
+
             // Generation 9 (Scarlet/Violet)
             50 or 51 or 52 or 53 => 9,  // 50=Scarlet, 51=Violet, 52-53 might be DLC
-            
+
             // Virtual Console games (map to their original generation)
             35 or 36 or 37 or 38 => 1,  // VC Gen1
             39 or 40 or 41 => 2,        // VC Gen2
-            
+
             // Pokemon GO
             34 => 7,
-            
+
             // Fallback for unknown values
             _ when gameId >= 54 => 9,   // Future Gen 9 DLC
             _ => 1                      // Very old/unknown values default to Gen 1
@@ -222,7 +222,7 @@ public static class PokemonGameInfoService
     public static IEnumerable<int> GetSpeciesIdsByName(string name)
     {
         var results = new List<int>();
-        
+
         // Search through all species names
         for (int i = 1; i < PKHeX.Core.GameInfo.Strings.Species.Count; i++)
         {
@@ -232,7 +232,7 @@ public static class PokemonGameInfoService
                 results.Add(i);
             }
         }
-        
+
         return results;
     }
 
@@ -242,24 +242,24 @@ public static class PokemonGameInfoService
     public static IEnumerable<int> GetSpeciesWithTypes(TypeFilterOptions options)
     {
         var results = new List<int>();
-        
+
         // Get personal table for type information
         var pt = PersonalTable.SWSH; // Using Sword/Shield as default, could be parameterized
-        
+
         for (int i = 1; i < pt.MaxSpeciesID; i++)
         {
             var personal = pt[i];
             if (personal == null) continue;
-            
+
             var primaryType = personal.Type1;
             var secondaryType = personal.Type2;
-            
+
             if (MatchesTypeFilter(primaryType, secondaryType, options))
             {
                 results.Add(i);
             }
         }
-        
+
         return results;
     }
 
@@ -297,7 +297,7 @@ public static class PokemonGameInfoService
     public static IEnumerable<(int Id, string Name)> GetAllTypes()
     {
         var types = new List<(int, string)>();
-        
+
         for (int i = 0; i < PKHeX.Core.GameInfo.Strings.Types.Count; i++)
         {
             var typeName = PkHexStringService.GetTypeName(i);
@@ -306,7 +306,7 @@ public static class PokemonGameInfoService
                 types.Add((i, typeName));
             }
         }
-        
+
         return types;
     }
 
@@ -316,38 +316,38 @@ public static class PokemonGameInfoService
     private static bool MatchesTypeFilter(int primaryType, int secondaryType, TypeFilterOptions options)
     {
         var hasSecondaryType = secondaryType != primaryType;
-        
+
         return options.Mode switch
         {
-            TypeFilterMode.HasAnyType => 
-                (options.PrimaryType == null || primaryType == options.PrimaryType || 
+            TypeFilterMode.HasAnyType =>
+                (options.PrimaryType == null || primaryType == options.PrimaryType ||
                  (hasSecondaryType && secondaryType == options.PrimaryType)) &&
-                (options.SecondaryType == null || primaryType == options.SecondaryType || 
+                (options.SecondaryType == null || primaryType == options.SecondaryType ||
                  (hasSecondaryType && secondaryType == options.SecondaryType)),
-                 
+
             TypeFilterMode.HasAllTypes =>
-                (options.PrimaryType == null || primaryType == options.PrimaryType || 
+                (options.PrimaryType == null || primaryType == options.PrimaryType ||
                  (hasSecondaryType && secondaryType == options.PrimaryType)) &&
-                (options.SecondaryType == null || primaryType == options.SecondaryType || 
+                (options.SecondaryType == null || primaryType == options.SecondaryType ||
                  (hasSecondaryType && secondaryType == options.SecondaryType)),
-                 
+
             TypeFilterMode.HasOnlyTypes =>
                 (!hasSecondaryType && options.PrimaryType == primaryType && options.SecondaryType == null) ||
-                (hasSecondaryType && 
+                (hasSecondaryType &&
                  ((primaryType == options.PrimaryType && secondaryType == options.SecondaryType) ||
                   (!options.EnforceTypeOrder && primaryType == options.SecondaryType && secondaryType == options.PrimaryType))),
-                  
+
             TypeFilterMode.PrimaryTypeOnly =>
                 !hasSecondaryType && options.PrimaryType == primaryType,
-                
+
             TypeFilterMode.ExactTypeOrder =>
                 hasSecondaryType && primaryType == options.PrimaryType && secondaryType == options.SecondaryType,
-                
+
             TypeFilterMode.BothTypesAnyOrder =>
-                hasSecondaryType && 
+                hasSecondaryType &&
                 ((primaryType == options.PrimaryType && secondaryType == options.SecondaryType) ||
                  (primaryType == options.SecondaryType && secondaryType == options.PrimaryType)),
-                 
+
             _ => false
         };
     }

@@ -9,7 +9,7 @@ namespace BeastVault.Api.Contracts;
 public record AdvancedPokemonQuery
 {
     #region Basic Filters
-    
+
     /// <summary>
     /// Text search across nickname, OT name, and notes
     /// </summary>
@@ -233,7 +233,7 @@ public record AdvancedPokemonQuery
     public IEnumerable<PokemonSortOptions> GetAllSortOptions()
     {
         yield return GetPrimarySortOptions();
-        
+
         var secondary = GetSecondarySortOptions();
         if (secondary != null)
             yield return secondary;
