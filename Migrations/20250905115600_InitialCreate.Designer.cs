@@ -11,8 +11,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace BeastVault.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20250817161225_InitialMigration")]
-    partial class InitialMigration
+    [Migration("20250905115600_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -96,6 +96,9 @@ namespace BeastVault.Api.Migrations
                     b.Property<int>("BallId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("CanGigantamax")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("ContestBeauty")
                         .HasColumnType("INTEGER");
 
@@ -118,6 +121,9 @@ namespace BeastVault.Api.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("CurrentHandler")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("DynamaxLevel")
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("EggLocation")

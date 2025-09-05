@@ -22,10 +22,15 @@ namespace BeastVault.Api.Infrastructure.Services
             _parser = parser;
             _storage = storage;
 
-            // Watch the Documents/BeastVault directory (user's organization area)
-            var documentsPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-            _watchPath = Path.Combine(documentsPath, "BeastVault");
+            // Usar la ruta adecuada según el entorno
+            _watchPath = EnvironmentUtils.GetPokemonFilesPath();
             _backupPath = Path.Combine(_watchPath, "backup");
+
+            // Si estamos en Docker, notificar la ruta usada
+            if (EnvironmentUtils.IsRunningInDocker())
+            {
+                Console.WriteLine($"Running in Docker, watching directory: {_watchPath}");
+            }
 
             // Ensure the directories exist
             if (!Directory.Exists(_watchPath))
