@@ -15,27 +15,26 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Lowercase owner
-        run: |
-          echo "OWNER_LC=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+        run: echo "OWNER_LC=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
-
       - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ env.OWNER_LC }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build & Push
-        uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./Dockerfile # cuidado con la D mayúscula
-          platforms: linux/amd64,linux/arm64
+          file: ./Dockerfile # ⚠️ que coincida con el nombre que dejas en el repo
+          platforms: linux/amd64 # primero solo amd64; cuando pase, vuelve a multi-arch
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
           provenance: false
           sbom: false
+        env:
+          BUILDKIT_PROGRESS: plain

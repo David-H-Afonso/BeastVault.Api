@@ -3,7 +3,8 @@ FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 COPY . .
 
-# --- DIAGNÓSTICO (para ver por qué falla en Actions) ---
+# --- Diagnóstico + build explícito sobre el .csproj de la raíz ---
+# (si tu .csproj se llama distinto, cambia el nombre)
 RUN set -eux; \
     echo "Contenido en /src:"; ls -la; \
     dotnet --info; \
