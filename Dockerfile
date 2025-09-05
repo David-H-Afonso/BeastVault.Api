@@ -3,13 +3,12 @@ FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 COPY . .
 
-# 👇 ADICIÓN: detecta automáticamente el primer .csproj y lo usa en restore/publish
-# (busca hasta 3 niveles por si el proyecto está en subcarpeta)
+# --- DIAGNÓSTICO (para ver por qué falla en Actions) ---
 RUN set -eux; \
-    PROJECT=$(find . -maxdepth 3 -name "*.csproj" | head -n 1); \
-    echo ">> Usando proyecto: $PROJECT"; \
-    dotnet restore "$PROJECT"; \
-    dotnet publish "$PROJECT" -c Release -o /out --no-restore
+    echo "Contenido en /src:"; ls -la; \
+    dotnet --info; \
+    echo ">> RESTORE"; dotnet restore ./BeastVault.Api.csproj -v minimal; \
+    echo ">> PUBLISH"; dotnet publish ./BeastVault.Api.csproj -c Release -o /out --no-restore -v minimal
 
 # Runtime
 FROM mcr.microsoft.com/dotnet/aspnet:9.0
