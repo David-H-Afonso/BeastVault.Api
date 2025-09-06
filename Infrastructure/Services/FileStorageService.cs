@@ -1,5 +1,6 @@
 
 using System.Security.Cryptography;
+using BeastVault.Api.Infrastructure.Configuration;
 
 namespace BeastVault.Api.Infrastructure.Services
 {
@@ -7,11 +8,17 @@ namespace BeastVault.Api.Infrastructure.Services
     {
         private readonly string _basePath;
         private readonly string _backupPath;
+        private readonly StorageConfiguration _storageConfig;
 
-        public FileStorageService(string basePath)
+        // Propiedades públicas para acceder a las rutas
+        public string BasePath => _basePath;
+        public string BackupPath => _backupPath;
+
+        public FileStorageService(StorageConfiguration storageConfig)
         {
-            _basePath = basePath;
-            _backupPath = Path.Combine(basePath, "backup");
+            _storageConfig = storageConfig;
+            _basePath = storageConfig.PokemonFilesDirectory;
+            _backupPath = storageConfig.BackupDirectory;
         }
 
         public void EnsureVault()
