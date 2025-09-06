@@ -5,11 +5,16 @@ using BeastVault.Api.Extensions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using BeastVault.Api.Infrastructure.Services;
+using BeastVault.Api.Infrastructure.Configuration;
+using static BeastVault.Api.Endpoints.ConfigurationEndpoints;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// Registrar servicio de configuración de almacenamiento
+builder.Services.AddSingleton<StorageConfiguration>();
 
 // Add CORS
 builder.Services.AddCors(options =>
@@ -51,6 +56,7 @@ app.MapPokemonEndpoints();
 app.MapFilesEndpoints();
 app.MapScanEndpoints();
 app.MapMaintenanceEndpoints();
+app.MapConfigurationEndpoints();
 
 // Asegurar que exista la carpeta de almacenamiento y la BD
 using (var scope = app.Services.CreateScope())
@@ -90,60 +96,34 @@ namespace BeastVault.Api.Extensions
     {
         public static IServiceCollection AddAppDbContext(this IServiceCollection services, IConfiguration config)
         {
-            string dbPath = EnvironmentUtils.GetDatabasePath();
-
-            // Si estamos en Docker, notificar la ruta usada
-            if (EnvironmentUtils.IsRunningInDocker())
+            // Usar StorageConfiguration para obtener la ruta de la base de datos
+            services.AddDbContext<AppDbContext>((sp, opt) =>
             {
-                Console.WriteLine($"Running in Docker, using database path: {dbPath}");
-            }
+                var storageConfig = sp.GetRequiredService<StorageConfiguration>();
 
-            var configuredCs = config.GetConnectionString("Default");
+                // Registrar la configuración actual
+                storageConfig.LogCurrentConfiguration();
 
-            string connectionString;
-            if (string.IsNullOrEmpty(configuredCs))
-            {
-                // Ensure the directory exists
-                var dbDirectory = Path.GetDirectoryName(dbPath);
-                if (!Directory.Exists(dbDirectory))
+                // Usar la cadena de conexión configurada
+                var connectionString = config.GetConnectionString("Default");
+                if (string.IsNullOrEmpty(connectionString))
                 {
-                    Directory.CreateDirectory(dbDirectory!);
-                    Console.WriteLine($"Created database directory: {dbDirectory}");
+                    connectionString = storageConfig.GetConnectionString();
                 }
-                connectionString = $"Data Source={dbPath}";
-            }
-            else
-            {
-                connectionString = configuredCs;
-            }
 
-            services.AddDbContext<AppDbContext>(opt =>
-            {
                 opt.UseSqlite(connectionString);
             });
+
             return services;
         }
         public static IServiceCollection AddBeastVaultServices(this IServiceCollection services, IConfiguration config)
         {
             services.AddScoped<FileStorageService>(sp =>
             {
-                string basePath = EnvironmentUtils.GetPokemonFilesPath();
-
-                // Si estamos en Docker, notificar la ruta usada
-                if (EnvironmentUtils.IsRunningInDocker())
-                {
-                    Console.WriteLine($"Running in Docker, using Pokemon files path: {basePath}");
-                }
-
-                // Ensure the base directory exists
-                if (!Directory.Exists(basePath))
-                {
-                    Directory.CreateDirectory(basePath);
-                    Console.WriteLine($"Created BeastVault directory: {basePath}");
-                }
-
-                return new FileStorageService(basePath);
+                var storageConfig = sp.GetRequiredService<StorageConfiguration>();
+                return new FileStorageService(storageConfig);
             });
+
             services.AddScoped<BeastVault.Api.Infrastructure.Services.PkhexCoreParser>();
             services.AddScoped<BeastVault.Api.Infrastructure.Services.FileWatcherService>();
             return services;

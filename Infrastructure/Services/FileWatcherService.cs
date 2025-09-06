@@ -22,27 +22,23 @@ namespace BeastVault.Api.Infrastructure.Services
             _parser = parser;
             _storage = storage;
 
-            // Usar la ruta adecuada según el entorno
-            _watchPath = EnvironmentUtils.GetPokemonFilesPath();
-            _backupPath = Path.Combine(_watchPath, "backup");
+            // Usar las rutas del servicio FileStorageService que ya tiene configuración aplicada
+            _watchPath = storage.BasePath;
+            _backupPath = storage.BackupPath;
 
-            // Si estamos en Docker, notificar la ruta usada
-            if (EnvironmentUtils.IsRunningInDocker())
-            {
-                Console.WriteLine($"Running in Docker, watching directory: {_watchPath}");
-            }
+            Console.WriteLine($"Watching directory for Pokemon files: {_watchPath}");
+            Console.WriteLine($"Using backup directory: {_backupPath}");
 
-            // Ensure the directories exist
+            // Estos directorios ya deberían existir por la configuración inicial,
+            // pero verificamos por seguridad
             if (!Directory.Exists(_watchPath))
             {
                 Directory.CreateDirectory(_watchPath);
-                Console.WriteLine($"Created watch directory: {_watchPath}");
             }
 
             if (!Directory.Exists(_backupPath))
             {
                 Directory.CreateDirectory(_backupPath);
-                Console.WriteLine($"Created backup directory: {_backupPath}");
             }
         }
 
