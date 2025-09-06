@@ -24,6 +24,11 @@ RUN mkdir -p /app/pokemon/backup
 # Configurar volúmenes para persistencia de datos
 VOLUME ["/app/data", "/app/pokemon"]
 
+# Variables de entorno para configuración de rutas
+ENV BEASTVAULT_DB_PATH=/app/data/beastvault.db
+ENV BEASTVAULT_POKEMON_PATH=/app/pokemon
+
+# Variables de entorno para ASP.NET Core
 ENV ASPNETCORE_URLS=http://+:8080
 ENV ASPNETCORE_ENVIRONMENT=Production
 EXPOSE 8080
