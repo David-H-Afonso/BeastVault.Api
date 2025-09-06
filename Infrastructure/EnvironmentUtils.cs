@@ -33,6 +33,13 @@ namespace BeastVault.Api.Infrastructure
         /// </summary>
         public static string GetDatabasePath()
         {
+            // Priorizar variable de entorno BEASTVAULT_DB_PATH si existe
+            var envDbPath = Environment.GetEnvironmentVariable("BEASTVAULT_DB_PATH");
+            if (!string.IsNullOrEmpty(envDbPath))
+            {
+                return envDbPath;
+            }
+
             if (IsRunningInDocker())
             {
                 // En Docker, usar un directorio dentro del contenedor
@@ -42,11 +49,7 @@ namespace BeastVault.Api.Infrastructure
             {
                 // En escritorio, usar la ruta de AppData del usuario
                 var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-                var defaultDbPath = Path.Combine(appDataPath, "BeastVault", "beastvault.db");
-
-                // Priorizar variable de entorno DB_PATH si existe
-                var envDbPath = Environment.GetEnvironmentVariable("DB_PATH");
-                return !string.IsNullOrEmpty(envDbPath) ? envDbPath : defaultDbPath;
+                return Path.Combine(appDataPath, "BeastVault", "beastvault.db");
             }
         }
 
@@ -55,6 +58,13 @@ namespace BeastVault.Api.Infrastructure
         /// </summary>
         public static string GetPokemonFilesPath()
         {
+            // Priorizar variable de entorno BEASTVAULT_POKEMON_PATH si existe
+            var envStoragePath = Environment.GetEnvironmentVariable("BEASTVAULT_POKEMON_PATH");
+            if (!string.IsNullOrEmpty(envStoragePath))
+            {
+                return envStoragePath;
+            }
+
             if (IsRunningInDocker())
             {
                 // En Docker, usar un directorio dentro del contenedor
@@ -64,11 +74,7 @@ namespace BeastVault.Api.Infrastructure
             {
                 // En escritorio, usar la carpeta de Documentos del usuario
                 var documentsPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-                var defaultStoragePath = Path.Combine(documentsPath, "BeastVault");
-
-                // Priorizar variable de entorno STORAGE_PATH si existe
-                var envStoragePath = Environment.GetEnvironmentVariable("STORAGE_PATH");
-                return !string.IsNullOrEmpty(envStoragePath) ? envStoragePath : defaultStoragePath;
+                return Path.Combine(documentsPath, "BeastVault");
             }
         }
     }
