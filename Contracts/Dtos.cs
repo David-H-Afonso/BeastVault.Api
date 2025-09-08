@@ -78,6 +78,16 @@ namespace BeastVault.Api.Contracts
         /// Number of items to return (recommended max: 100)
         /// </summary>
         public int Take { get; init; } = 50;
+
+        /// <summary>
+        /// Filter by tag IDs (Pokémon must have ALL specified tags)
+        /// </summary>
+        public int[]? TagIds { get; init; }
+
+        /// <summary>
+        /// Filter Pokémon that have no tags
+        /// </summary>
+        public bool? HasNoTags { get; init; }
     }
 
     /// <summary>
@@ -132,6 +142,11 @@ namespace BeastVault.Api.Contracts
         public int? TeraType { get; init; }
 
         /// <summary>
+        /// ID of the held item (important for form changes like Zacian/Zamazenta)
+        /// </summary>
+        public int HeldItemId { get; init; }
+
+        /// <summary>
         /// Key to identify the sprite (species+form+shiny)
         /// </summary>
         public string SpriteKey { get; init; } = "";
@@ -155,6 +170,11 @@ namespace BeastVault.Api.Contracts
         /// Whether this Pokemon has a Mega Stone equipped (affects form display)
         /// </summary>
         public bool HasMegaStone { get; init; }
+
+        /// <summary>
+        /// List of tags assigned to this Pokemon
+        /// </summary>
+        public List<TagDto> Tags { get; init; } = new();
     }
 
     /// <summary>
@@ -353,5 +373,63 @@ namespace BeastVault.Api.Contracts
         /// Personal notes about the Pokémon (null = no change, string.Empty = clear)
         /// </summary>
         public string? Notes { get; init; }
+    }
+
+    /// <summary>
+    /// Tag information
+    /// </summary>
+    public record TagDto
+    {
+        /// <summary>
+        /// Tag ID
+        /// </summary>
+        public int Id { get; init; }
+
+        /// <summary>
+        /// Tag name (case-sensitive)
+        /// </summary>
+        public required string Name { get; init; }
+
+        /// <summary>
+        /// Optional path to tag image (PNG)
+        /// </summary>
+        public string? ImagePath { get; init; }
+    }
+
+    /// <summary>
+    /// Request to create a new tag
+    /// </summary>
+    public record CreateTagRequest
+    {
+        /// <summary>
+        /// Tag name (case-sensitive, must be unique)
+        /// </summary>
+        [Required]
+        [StringLength(50, MinimumLength = 1)]
+        public required string Name { get; init; }
+    }
+
+    /// <summary>
+    /// Request to update an existing tag
+    /// </summary>
+    public record UpdateTagRequest
+    {
+        /// <summary>
+        /// New tag name (case-sensitive, must be unique)
+        /// </summary>
+        [Required]
+        [StringLength(50, MinimumLength = 1)]
+        public required string Name { get; init; }
+    }
+
+    /// <summary>
+    /// Request to assign/remove tags to/from a Pokémon
+    /// </summary>
+    public record PokemonTagsRequest
+    {
+        /// <summary>
+        /// List of tag IDs to assign to the Pokémon
+        /// </summary>
+        public required int[] TagIds { get; init; }
     }
 }

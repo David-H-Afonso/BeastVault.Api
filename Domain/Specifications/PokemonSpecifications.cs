@@ -289,3 +289,36 @@ public class HeldItemSpecification : IPokemonSpecification
         return query.Where(p => p.HeldItemId == _heldItemId);
     }
 }
+
+/// <summary>
+/// Specification for filtering Pokemon by tags (Pokemon must have ALL specified tags)
+/// </summary>
+public class TagsSpecification : IPokemonSpecification
+{
+    private readonly int[] _tagIds;
+
+    public TagsSpecification(int[] tagIds)
+    {
+        _tagIds = tagIds ?? throw new ArgumentNullException(nameof(tagIds));
+    }
+
+    public IQueryable<PokemonEntity> Apply(IQueryable<PokemonEntity> query)
+    {
+        foreach (var tagId in _tagIds)
+        {
+            query = query.Where(p => p.PokemonTags.Any(pt => pt.TagId == tagId));
+        }
+        return query;
+    }
+}
+
+/// <summary>
+/// Specification for filtering Pokemon that have no tags
+/// </summary>
+public class NoTagsSpecification : IPokemonSpecification
+{
+    public IQueryable<PokemonEntity> Apply(IQueryable<PokemonEntity> query)
+    {
+        return query.Where(p => !p.PokemonTags.Any());
+    }
+}

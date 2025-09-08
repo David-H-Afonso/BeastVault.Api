@@ -26,17 +26,17 @@ builder.Services.AddCors(options =>
         {
             if (string.IsNullOrEmpty(origin)) return false;
             var uri = new Uri(origin);
-            
+
             // Permitir localhost y 127.0.0.1 (desarrollo y Electron)
             if (uri.Host == "localhost" || uri.Host == "127.0.0.1")
                 return true;
-            
+
             // Permitir redes locales (CasaOS y desarrollo)
-            if (uri.Host.StartsWith("192.168.") || 
-                uri.Host.StartsWith("10.") || 
+            if (uri.Host.StartsWith("192.168.") ||
+                uri.Host.StartsWith("10.") ||
                 uri.Host.StartsWith("172."))
                 return true;
-                
+
             return false;
         })
             .AllowAnyMethod()
@@ -64,6 +64,7 @@ app.UseHttpsRedirection();
 app.MapHealthChecks();
 app.MapImportEndpoints();
 app.MapPokemonEndpoints();
+app.MapTagEndpoints();
 app.MapFilesEndpoints();
 app.MapScanEndpoints();
 app.MapMaintenanceEndpoints();

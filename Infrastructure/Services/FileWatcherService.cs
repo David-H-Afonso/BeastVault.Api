@@ -161,6 +161,28 @@ namespace BeastVault.Api.Infrastructure.Services
             var existingFile = await _context.Files
                 .FirstOrDefaultAsync(f => f.Sha256 == sha256);
 
+            // NUEVO: Siempre verificar y crear backup si no existe, incluso para archivos ya importados
+            try
+            {
+                var ext = Path.GetExtension(fileName);
+                var creationTime = File.GetCreationTime(filePath);
+                var backupPath = _storage.GetBackupPath(fileName, ext, creationTime);
+
+                if (!File.Exists(backupPath))
+                {
+                    _storage.SaveBackup(fileName, ext, fileBytes, creationTime);
+                    Console.WriteLine($"✅ Backup created for directory file: {fileName}");
+                }
+                else
+                {
+                    Console.WriteLine($"ℹ️  Backup already exists for: {fileName}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠️  Warning: Could not create/verify backup for {fileName}: {ex.Message}");
+            }
+
             if (existingFile != null)
             {
                 result.AlreadyImported.Add(fileName);

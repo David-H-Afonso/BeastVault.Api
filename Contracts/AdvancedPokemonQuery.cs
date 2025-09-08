@@ -183,6 +183,20 @@ public record AdvancedPokemonQuery
 
     #endregion
 
+    #region Tag Filters
+
+    /// <summary>
+    /// Filter by tag IDs (Pokémon must have ALL specified tags)
+    /// </summary>
+    public int[]? TagIds { get; init; }
+
+    /// <summary>
+    /// Filter Pokémon that have no tags
+    /// </summary>
+    public bool? HasNoTags { get; init; }
+
+    #endregion
+
     /// <summary>
     /// Convert to type filter options
     /// </summary>

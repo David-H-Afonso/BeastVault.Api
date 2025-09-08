@@ -59,6 +59,21 @@ namespace BeastVault.Api.Migrations
                     b.ToTable("Files");
                 });
 
+            modelBuilder.Entity("BeastVault.Api.Domain.Entities.FileTagEntity", b =>
+                {
+                    b.Property<int>("FileId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("TagId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("FileId", "TagId");
+
+                    b.HasIndex("TagId");
+
+                    b.ToTable("FileTags");
+                });
+
             modelBuilder.Entity("BeastVault.Api.Domain.Entities.MoveEntity", b =>
                 {
                     b.Property<int>("PokemonId")
@@ -274,6 +289,8 @@ namespace BeastVault.Api.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("FileId");
+
                     b.HasIndex("OriginGame");
 
                     b.HasIndex("SpeciesId", "IsShiny");
@@ -290,6 +307,8 @@ namespace BeastVault.Api.Migrations
                         .HasColumnType("INTEGER");
 
                     b.HasKey("PokemonId", "TagId");
+
+                    b.HasIndex("TagId");
 
                     b.ToTable("PokemonTags");
                 });
@@ -402,13 +421,85 @@ namespace BeastVault.Api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("ImagePath")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Name")
+                        .IsUnique();
+
                     b.ToTable("Tags");
+                });
+
+            modelBuilder.Entity("BeastVault.Api.Domain.Entities.FileTagEntity", b =>
+                {
+                    b.HasOne("BeastVault.Api.Domain.Entities.FileEntity", "File")
+                        .WithMany("FileTags")
+                        .HasForeignKey("FileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("BeastVault.Api.Domain.Entities.TagEntity", "Tag")
+                        .WithMany("FileTags")
+                        .HasForeignKey("TagId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("File");
+
+                    b.Navigation("Tag");
+                });
+
+            modelBuilder.Entity("BeastVault.Api.Domain.Entities.PokemonEntity", b =>
+                {
+                    b.HasOne("BeastVault.Api.Domain.Entities.FileEntity", "File")
+                        .WithMany()
+                        .HasForeignKey("FileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("File");
+                });
+
+            modelBuilder.Entity("BeastVault.Api.Domain.Entities.PokemonTagEntity", b =>
+                {
+                    b.HasOne("BeastVault.Api.Domain.Entities.PokemonEntity", "Pokemon")
+                        .WithMany("PokemonTags")
+                        .HasForeignKey("PokemonId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("BeastVault.Api.Domain.Entities.TagEntity", "Tag")
+                        .WithMany("PokemonTags")
+                        .HasForeignKey("TagId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Pokemon");
+
+                    b.Navigation("Tag");
+                });
+
+            modelBuilder.Entity("BeastVault.Api.Domain.Entities.FileEntity", b =>
+                {
+                    b.Navigation("FileTags");
+                });
+
+            modelBuilder.Entity("BeastVault.Api.Domain.Entities.PokemonEntity", b =>
+                {
+                    b.Navigation("PokemonTags");
+                });
+
+            modelBuilder.Entity("BeastVault.Api.Domain.Entities.TagEntity", b =>
+                {
+                    b.Navigation("FileTags");
+
+                    b.Navigation("PokemonTags");
                 });
 #pragma warning restore 612, 618
         }

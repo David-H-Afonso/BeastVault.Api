@@ -22,6 +22,7 @@ namespace BeastVault.Api.Endpoints
                 // Remove all data from database
                 db.Pokemon.RemoveRange(db.Pokemon);
                 db.PokemonTags.RemoveRange(db.PokemonTags);
+                db.FileTags.RemoveRange(db.FileTags);
                 db.Stats.RemoveRange(db.Stats);
                 db.Moves.RemoveRange(db.Moves);
                 db.RelearnMoves.RemoveRange(db.RelearnMoves);
@@ -201,7 +202,7 @@ namespace BeastVault.Api.Endpoints
                     .Skip(q.Skip)
                     .Take(q.Take)
                     .Join(db.Files, p => p.FileId, f => f.Id, (p, f) => new { Pokemon = p, File = f })
-                    .Select(pf => new PokemonListItemDto
+                    .Select(pf => new
                     {
                         Id = pf.Pokemon.Id,
                         SpeciesId = pf.Pokemon.SpeciesId,
@@ -211,6 +212,7 @@ namespace BeastVault.Api.Endpoints
                         IsShiny = pf.Pokemon.IsShiny,
                         BallId = pf.Pokemon.BallId,
                         TeraType = pf.Pokemon.TeraType,
+                        HeldItemId = pf.Pokemon.HeldItemId,
                         SpriteKey = pf.Pokemon.SpriteKey,
                         OriginGeneration = PokemonGameInfoService.GetSpeciesOriginGeneration(pf.Pokemon.SpeciesId),
                         CapturedGeneration = PokemonGameInfoService.GetCapturedGeneration(pf.Pokemon.OriginGame, pf.File.Format),
@@ -219,12 +221,50 @@ namespace BeastVault.Api.Endpoints
                     })
                     .ToListAsync();
 
+                // Get all Pokemon IDs to fetch their tags
+                var pokemonIds = items.Select(i => i.Id).ToList();
+                var pokemonTags = await db.PokemonTags
+                    .Where(pt => pokemonIds.Contains(pt.PokemonId))
+                    .Include(pt => pt.Tag)
+                    .GroupBy(pt => pt.PokemonId)
+                    .ToDictionaryAsync(
+                        g => g.Key,
+                        g => g.Select(pt => new TagDto
+                        {
+                            Id = pt.Tag.Id,
+                            Name = pt.Tag.Name,
+                            ImagePath = pt.Tag.ImagePath
+                        })
+                        .OrderBy(t => t.Name)
+                        .ToList()
+                    );
+
+                // Create the final DTOs with tags
+                var resultItems = items.Select(item => new PokemonListItemDto
+                {
+                    Id = item.Id,
+                    SpeciesId = item.SpeciesId,
+                    Form = item.Form,
+                    Nickname = item.Nickname,
+                    Level = item.Level,
+                    IsShiny = item.IsShiny,
+                    BallId = item.BallId,
+                    TeraType = item.TeraType,
+                    HeldItemId = item.HeldItemId,
+                    SpriteKey = item.SpriteKey,
+                    OriginGeneration = item.OriginGeneration,
+                    CapturedGeneration = item.CapturedGeneration,
+                    CanGigantamax = item.CanGigantamax,
+                    HasMegaStone = item.HasMegaStone,
+                    Tags = pokemonTags.GetValueOrDefault(item.Id, new List<TagDto>())
+                }).ToList();
+
                 // Get query statistics for monitoring
                 var stats = PokemonQueryService.GetQueryStats(q);
 
                 return Results.Ok(new
                 {
-                    Items = items,
+                    Items = resultItems,
                     Total = total,
                     Stats = stats
                 });

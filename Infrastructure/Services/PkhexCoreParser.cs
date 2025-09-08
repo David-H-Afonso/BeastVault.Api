@@ -183,6 +183,20 @@ namespace BeastVault.Api.Infrastructure.Services
                     HandlingTrainerMemoryVariable = GetIntProp("HandlingTrainerMemoryVariable", "HT_TextVar")
                 };
 
+                // Handle form changes for Pokémon with specific held items
+                // Zacian with Rusted Sword (ID 1103) → Form 1 (Crowned Sword)
+                // Zamazenta with Rusted Shield (ID 1104) → Form 1 (Crowned Shield)
+                if (p.SpeciesId == 888 && p.HeldItemId == 1103) // Zacian with Rusted Sword
+                {
+                    p.Form = 1; // Crowned Sword form
+                    p.SpriteKey = $"{p.SpeciesId}_{(p.IsShiny ? "s" : "n")}_1";
+                }
+                else if (p.SpeciesId == 889 && p.HeldItemId == 1104) // Zamazenta with Rusted Shield
+                {
+                    p.Form = 1; // Crowned Shield form
+                    p.SpriteKey = $"{p.SpeciesId}_{(p.IsShiny ? "s" : "n")}_1";
+                }
+
                 // Enhanced stats with current calculated values
                 bool GetHT(string prop)
                 {

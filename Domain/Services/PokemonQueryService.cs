@@ -125,6 +125,17 @@ public static class PokemonQueryService
             specifications.Add(new HeldItemSpecification(query.HeldItemId.Value));
         }
 
+        // Tag filtering
+        if (query.TagIds?.Length > 0)
+        {
+            specifications.Add(new TagsSpecification(query.TagIds));
+        }
+
+        if (query.HasNoTags == true)
+        {
+            specifications.Add(new NoTagsSpecification());
+        }
+
         return specifications;
     }
 

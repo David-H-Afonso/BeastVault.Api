@@ -150,5 +150,16 @@ namespace BeastVault.Api.Infrastructure.Services
         }
 
         public byte[] Read(string path) => File.ReadAllBytes(path);
+
+        /// <summary>
+        /// Construye la ruta donde debería estar el archivo de backup
+        /// </summary>
+        public string GetBackupPath(string originalFileName, string ext, DateTime? importDate = null)
+        {
+            var year = (importDate ?? DateTime.Now).Year.ToString();
+            var formatFolder = ext.TrimStart('.').ToLowerInvariant();
+            var backupDir = Path.Combine(_backupPath, formatFolder, year);
+            return Path.Combine(backupDir, originalFileName);
+        }
     }
 }

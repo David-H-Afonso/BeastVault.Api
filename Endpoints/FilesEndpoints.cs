@@ -104,6 +104,44 @@ namespace BeastVault.Api.Endpoints
             .Produces<byte[]>(200, "application/octet-stream")
             .Produces(404)
             .Produces(500);
+            // Download backup file by Pokemon ID
+            app.MapGet("/export/backup/{pokemonId:int}", async (int pokemonId, AppDbContext context, FileStorageService storage) =>
+            {
+                var pokemon = await context.Pokemon
+                    .Include(p => p.File)
+                    .FirstOrDefaultAsync(p => p.Id == pokemonId);
+
+                if (pokemon?.File == null)
+                    return Results.NotFound("Pokemon or file not found");
+
+                // Get the original extension
+                var originalExt = Path.GetExtension(pokemon.File.OriginalFileName ?? pokemon.File.FileName);
+
+                // Try to get backup based on file import date
+                var importDate = pokemon.File.ImportedAt;
+                var fileName = pokemon.File.OriginalFileName ?? pokemon.File.FileName;
+
+                try
+                {
+                    // Get backup file path
+                    var backupPath = storage.GetBackupPath(fileName, originalExt, importDate);
+
+                    if (!File.Exists(backupPath))
+                        return Results.NotFound("Backup file not found");
+
+                    var fileBytes = await File.ReadAllBytesAsync(backupPath);
+                    var downloadName = $"backup_{fileName}";
+
+                    return Results.File(fileBytes, "application/octet-stream", downloadName);
+                }
+                catch (Exception ex)
+                {
+                    return Results.Problem($"Error accessing backup: {ex.Message}");
+                }
+            })
+            .WithName("DownloadBackupFile")
+            .WithTags("Export");
+
             return app;
         }
     }
