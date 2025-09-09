@@ -246,7 +246,9 @@ namespace BeastVault.Api.Endpoints
                 {
                     Id = item.Id,
                     SpeciesId = item.SpeciesId,
+                    SpeciesName = PkHexStringService.GetSpeciesName(item.SpeciesId),
                     Form = item.Form,
+                    FormName = PkHexStringService.GetFormName(item.SpeciesId, item.Form),
                     Nickname = item.Nickname,
                     Level = item.Level,
                     IsShiny = item.IsShiny,

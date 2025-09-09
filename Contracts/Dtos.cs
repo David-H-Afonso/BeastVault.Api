@@ -112,9 +112,19 @@ namespace BeastVault.Api.Contracts
         public int SpeciesId { get; init; }
 
         /// <summary>
+        /// Species name (e.g., "Bulbasaur", "Pikachu")
+        /// </summary>
+        public string SpeciesName { get; init; } = "";
+
+        /// <summary>
         /// Form ID (e.g., 0 = Normal Meowth, 1 = Alolan Meowth, 2 = Galarian Meowth)
         /// </summary>
         public int Form { get; init; }
+
+        /// <summary>
+        /// Form name (e.g., "Alolan", "Galarian", "Mega", "Crowned", "Gigantamax")
+        /// </summary>
+        public string FormName { get; init; } = "";
 
         /// <summary>
         /// Pokémon nickname (null if using species name)

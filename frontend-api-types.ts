@@ -21,7 +21,7 @@
 
 export type ImportStatus = "imported" | "duplicate" | "error";
 
-export type FileFormat =
+export type FileFormat
   | "pk1"
   | "pk2"
   | "pk3"
@@ -228,8 +228,12 @@ export interface PokemonListItemDto {
   id: number;
   /** ID de especie (ej: 1 = Bulbasaur, 25 = Pikachu) */
   speciesId: number;
+  /** Nombre de la especie (ej: "Bulbasaur", "Pikachu") */
+  speciesName: string;
   /** ID de forma (ej: 0 = Meowth Normal, 1 = Meowth de Alola, 2 = Meowth de Galar) */
   form: number;
+  /** Nombre de la forma (ej: "Alolan", "Galarian", "Mega", "Crowned", "Gigantamax") */
+  formName: string;
   /** Nickname del Pokémon (null si usa el nombre de la especie) */
   nickname?: string;
   /** Nivel del Pokémon (1-100) */
@@ -863,23 +867,29 @@ export type AllEndpoints = PokemonEndpoints &
  *    - anyTagNames: ["Favoritos", "Shiny"] = Pokémon con cualquiera de estos tags
  *    - hasNoTags: true = Pokémon sin ningún tag asignado
  *
- * 7. TIPOS OPCIONALES: Los campos marcados con ? son opcionales y pueden ser undefined.
+ * 7. NOMBRES DE ESPECIES Y FORMAS: El endpoint devuelve tanto speciesName como formName
+ *    - speciesName: "Meowth", "Moltres", "Zacian"
+ *    - formName: "Alolan", "Galarian", "Mega", "Crowned", "Gigantamax" (vacío para forma base)
  *
- * 8. ENUMS: Los enums numéricos deben usarse con sus valores numéricos, no los nombres.
+ * 8. TIPOS OPCIONALES: Los campos marcados con ? son opcionales y pueden ser undefined.
  *
- * 9. ERRORES: Todos los endpoints pueden devolver errores HTTP estándar (400, 404, 500).
- *    Manejar estos errores apropiadamente en el frontend.
+ * 8. TIPOS OPCIONALES: Los campos marcados con ? son opcionales y pueden ser undefined.
  *
- * 10. CORS: Asegúrate de que el frontend esté configurado para hacer peticiones al puerto
+ * 9. ENUMS: Los enums numéricos deben usarse con sus valores numéricos, no los nombres.
+ *
+ * 10. ERRORES: Todos los endpoints pueden devolver errores HTTP estándar (400, 404, 500).
+ *     Manejar estos errores apropiadamente en el frontend.
+ *
+ * 11. CORS: Asegúrate de que el frontend esté configurado para hacer peticiones al puerto
  *     correcto de la API (generalmente https://localhost:7xxx o http://localhost:5xxx).
  *
- * 11. TAGS: Sistema completo de etiquetado de Pokémon disponible.
+ * 12. TAGS: Sistema completo de etiquetado de Pokémon disponible.
  *     - GET /tags: Obtener todos los tags con conteo de Pokémon
  *     - CRUD completo: crear, editar, eliminar tags
  *     - Asignar/desasignar tags a Pokémon específicos
  *     - Subir/eliminar imágenes de tags
  *     - Obtener lista de Pokémon por tag
  *
- * 12. ORGANIZACIÓN API: Los endpoints están organizados por categorías
+ * 13. ORGANIZACIÓN API: Los endpoints están organizados por categorías
  *     (Pokemon, Import, Files, Tags, etc.) para mejor organización en Swagger/OpenAPI.
  */

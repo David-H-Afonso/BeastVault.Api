@@ -26,6 +26,35 @@ namespace BeastVault.Api.Infrastructure.Services
         }
 
         /// <summary>
+        /// Get form name by species and form ID
+        /// </summary>
+        public static string GetFormName(int speciesId, int formId, int language = 2)
+        {
+            if (speciesId <= 0 || formId <= 0) return "";
+
+            try
+            {
+                // Use PKHeX's form names
+                var formNames = FormConverter.GetFormList((ushort)speciesId, GameInfo.Strings.types, GameInfo.Strings.forms, GameInfo.GenderSymbolASCII, EntityContext.Gen9);
+                
+                if (formNames != null && formId < formNames.Length)
+                {
+                    var formName = formNames[formId];
+                    // Return empty string for base form (usually empty or just the species name)
+                    if (string.IsNullOrEmpty(formName) || formName == GetSpeciesName(speciesId))
+                        return "";
+                    return formName;
+                }
+                
+                return "";
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        /// <summary>
         /// Get ability name by ID
         /// </summary>
         public static string GetAbilityName(int abilityId, int language = 2)
