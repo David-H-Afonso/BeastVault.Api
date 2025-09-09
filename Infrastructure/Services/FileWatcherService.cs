@@ -55,12 +55,12 @@ namespace BeastVault.Api.Infrastructure.Services
                 // Always check for deleted files first, regardless of whether there are new files
                 await CleanupDeletedFilesAsync(result);
 
-                // Get all Pokemon files in the directory and subdirectories, EXCLUDING backup folder
+                // Get all Pokemon files in the directory and subdirectories, EXCLUDING backup folder and hidden directories
                 var pokemonFiles = Directory.GetFiles(_watchPath, "*.*", SearchOption.AllDirectories)
-                    .Where(file => IsPokemonFile(file) && !IsInBackupDirectory(file))
+                    .Where(file => IsPokemonFile(file) && !IsInIgnoredDirectory(file))
                     .ToList();
 
-                Console.WriteLine($"Found {pokemonFiles.Count} Pokemon files in watch directory (excluding backup)");
+                Console.WriteLine($"Found {pokemonFiles.Count} Pokemon files in watch directory (excluding backup and hidden directories)");
 
                 foreach (var filePath in pokemonFiles)
                 {
@@ -88,9 +88,9 @@ namespace BeastVault.Api.Infrastructure.Services
         {
             try
             {
-                // Get all files currently in the user area (excluding backup)
+                // Get all files currently in the user area (excluding backup and hidden directories)
                 var currentUserFiles = Directory.GetFiles(_watchPath, "*.*", SearchOption.AllDirectories)
-                    .Where(file => IsPokemonFile(file) && !IsInBackupDirectory(file))
+                    .Where(file => IsPokemonFile(file) && !IsInIgnoredDirectory(file))
                     .ToList();
 
                 // Calculate hashes for current files
@@ -237,13 +237,32 @@ namespace BeastVault.Api.Infrastructure.Services
         }
 
         /// <summary>
-        /// Checks if a file path is within the backup directory
+        /// Checks if a file path is within directories that should be ignored:
+        /// - backup directory
+        /// - any directory starting with . (like .stfolder, .stversions, etc.)
         /// </summary>
-        private bool IsInBackupDirectory(string filePath)
+        private bool IsInIgnoredDirectory(string filePath)
         {
             var normalizedFilePath = Path.GetFullPath(filePath);
             var normalizedBackupPath = Path.GetFullPath(_backupPath);
-            return normalizedFilePath.StartsWith(normalizedBackupPath, StringComparison.OrdinalIgnoreCase);
+            
+            // Check if file is in backup directory
+            if (normalizedFilePath.StartsWith(normalizedBackupPath, StringComparison.OrdinalIgnoreCase))
+                return true;
+            
+            // Check if file is in any directory starting with . (hidden/system directories)
+            var directoryPath = Path.GetDirectoryName(normalizedFilePath);
+            if (directoryPath != null)
+            {
+                var pathParts = directoryPath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                foreach (var part in pathParts)
+                {
+                    if (part.StartsWith('.') && part.Length > 1) // Ignore directories like .stfolder, .stversions, etc.
+                        return true;
+                }
+            }
+            
+            return false;
         }
 
         private static bool IsPokemonFile(string filePath)
