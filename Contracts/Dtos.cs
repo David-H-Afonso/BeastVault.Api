@@ -147,6 +147,11 @@ namespace BeastVault.Api.Contracts
         public int HeldItemId { get; init; }
 
         /// <summary>
+        /// Gender: 0 = Male, 1 = Female, 2 = Genderless
+        /// </summary>
+        public int Gender { get; init; }
+
+        /// <summary>
         /// Key to identify the sprite (species+form+shiny)
         /// </summary>
         public string SpriteKey { get; init; } = "";

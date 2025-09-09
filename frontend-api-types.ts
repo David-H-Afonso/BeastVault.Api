@@ -228,6 +228,10 @@ export interface PokemonListItemDto {
   ballId: number;
   /** Tipo Tera (Gen 9), null si no aplica */
   teraType?: number;
+  /** ID del objeto equipado (importante para cambios de forma como Zacian/Zamazenta) */
+  heldItemId: number;
+  /** Género: 0 = Macho, 1 = Hembra, 2 = Sin género */
+  gender: number;
   /** Clave para identificar el sprite (especie+forma+shiny) */
   spriteKey: string;
   /** Generación donde la especie fue introducida por primera vez (campo calculado) */
@@ -614,9 +618,9 @@ export const API_CONSTANTS = {
     ".ekx",
   ] as const,
   POKEMON_GENDERS: {
-    UNKNOWN: 0,
-    MALE: 1,
-    FEMALE: 2,
+    MALE: 0,
+    FEMALE: 1,
+    GENDERLESS: 2,
   } as const,
 } as const;
 

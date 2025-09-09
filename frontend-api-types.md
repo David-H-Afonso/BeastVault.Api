@@ -193,28 +193,36 @@ notes?: string;
 // ===================================
 
 export interface PokemonListItemDto {
-/** ID único del Pokémon en la base de datos \*/
+/** ID único del Pokémon en la base de datos */
 id: number;
-/** ID de especie (ej: 1 = Bulbasaur, 25 = Pikachu) _/
+/** ID de especie (ej: 1 = Bulbasaur, 25 = Pikachu) */
 speciesId: number;
-/\*\* ID de forma (ej: 0 = Meowth Normal, 1 = Meowth de Alola, 2 = Meowth de Galar) _/
+/** ID de forma (ej: 0 = Meowth Normal, 1 = Meowth de Alola, 2 = Meowth de Galar) */
 form: number;
-/** Nickname del Pokémon (null si usa el nombre de la especie) \*/
+/** Nickname del Pokémon (null si usa el nombre de la especie) */
 nickname?: string;
-/** Nivel del Pokémon (1-100) _/
+/** Nivel del Pokémon (1-100) */
 level: number;
-/\*\* Si es shiny _/
+/** Si es shiny */
 isShiny: boolean;
-/** ID de la Pokébola en la que fue capturado \*/
+/** ID de la Pokébola en la que fue capturado */
 ballId: number;
-/** Tipo Tera (Gen 9), null si no aplica _/
+/** Tipo Tera (Gen 9), null si no aplica */
 teraType?: number;
-/\*\* Clave para identificar el sprite (especie+forma+shiny) _/
+/** ID del objeto equipado (importante para cambios de forma como Zacian/Zamazenta) */
+heldItemId: number;
+/** Género: 0 = Macho, 1 = Hembra, 2 = Sin género */
+gender: number;
+/** Clave para identificar el sprite (especie+forma+shiny) */
 spriteKey: string;
-/** Generación de origen del Pokémon (calculado del juego de origen) \*/
+/** Generación donde la especie fue introducida por primera vez (campo calculado) */
 originGeneration: number;
-/** Generación en la que fue capturado (calculado del formato de archivo) \*/
+/** Generación donde este Pokémon específico fue capturado/obtenido (campo calculado) */
 capturedGeneration: number;
+/** Si este Pokémon puede Gigantamax (solo archivos Gen 8+) */
+canGigantamax: boolean;
+/** Si este Pokémon tiene una Mega Piedra equipada (afecta la visualización de la forma) */
+hasMegaStone: boolean;
 }
 
 export interface StatsDto {
@@ -572,9 +580,9 @@ SUPPORTED_FILE_EXTENSIONS: [
 '.ekx'
 ] as const,
 POKEMON_GENDERS: {
-UNKNOWN: 0,
-MALE: 1,
-FEMALE: 2
+MALE: 0,
+FEMALE: 1,
+GENDERLESS: 2
 } as const
 } as const;
 

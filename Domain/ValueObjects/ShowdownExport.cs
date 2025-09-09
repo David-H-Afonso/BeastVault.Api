@@ -16,8 +16,8 @@ namespace BeastVault.Api.Domain.ValueObjects
             var natureName = PkHexStringService.GetNatureName(p.Nature);
             string? teraTypeName = p.TeraType.HasValue ? PkHexStringService.GetTypeName(p.TeraType.Value) : null;
 
-            // Nickname (Species) (M/F/Unknown) @ Item (0=male, 1=female)
-            string genderSuffix = p.Gender == 0 ? " (M)" : p.Gender == 1 ? " (F)" : " (Unknown)";
+            // Nickname (Species) (M/F/Genderless) @ Item (0=Male, 1=Female, 2=Genderless)
+            string genderSuffix = p.Gender == 0 ? " (M)" : p.Gender == 1 ? " (F)" : " (Genderless)";
             var nickname = string.IsNullOrWhiteSpace(p.Nickname) ? speciesName : $"{p.Nickname} ({speciesName})";
             sb.Append($"{nickname}{genderSuffix}");
             if (p.HeldItemId > 0)

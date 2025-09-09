@@ -307,10 +307,10 @@ namespace BeastVault.Api.Infrastructure.Services
         }
         // (removed duplicate misplaced code)
 
-        // Gender: 0 = macho, 1 = hembra
+        // Gender: 0 = Male, 1 = Female, 2 = Genderless
         private static int GetGender(PKM pk)
         {
-            // Try property "Gender" (0 = macho, 1 = hembra)
+            // Try property "Gender" (0 = Male, 1 = Female, 2 = Genderless)
             var pi = pk.GetType().GetProperty("Gender");
             if (pi != null && pi.PropertyType == typeof(int))
             {
@@ -324,10 +324,10 @@ namespace BeastVault.Api.Infrastructure.Services
                 var val = pi.GetValue(pk);
                 if (val is bool b) return b ? 1 : 0;
             }
-            return 0; // default macho
+            return 0; // default Male
         }
 
-        // OTGender: 0 = macho, 1 = hembra
+        // OTGender: 0 = Male, 1 = Female, 2 = Genderless
         private static int GetOTGender(PKM pk)
         {
             var pi = pk.GetType().GetProperty("OT_Gender");
@@ -343,7 +343,7 @@ namespace BeastVault.Api.Infrastructure.Services
                 var val = pi.GetValue(pk);
                 if (val is int i) return i;
             }
-            return 0; // default macho
+            return 0; // default Male
         }
 
         // OTLanguage: try OT_Language, TrainerLanguage, fallback to Language

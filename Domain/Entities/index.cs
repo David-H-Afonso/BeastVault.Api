@@ -40,9 +40,9 @@ namespace BeastVault.Api.Domain.Entities
         public bool Favorite { get; set; }
         public string? Notes { get; set; }
 
-        // 0 = undefined, 1 = male, 2 = female
+        // Gender: 0 = Male, 1 = Female, 2 = Genderless
         public int Gender { get; set; } = 0;
-        // 0 = undefined, 1 = male, 2 = female
+        // OT Gender: 0 = Male, 1 = Female, 2 = Genderless
         public int OTGender { get; set; } = 0;
         public string OTLanguage { get; set; } = "";
 
