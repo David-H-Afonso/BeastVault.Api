@@ -78,14 +78,14 @@ using (var scope = app.Services.CreateScope())
     // Asegurar que la base de datos esté creada con el esquema actual
     try
     {
-        // Este método es más seguro que MigrateAsync, ya que solo crea la base de datos
-        // si no existe, pero no intenta aplicar migraciones adicionales
-        await db.Database.EnsureCreatedAsync();
-        Console.WriteLine("Base de datos verificada correctamente.");
+        // Usar migraciones en lugar de EnsureCreated para aplicar cambios de esquema
+        await db.Database.MigrateAsync();
+        Console.WriteLine("✅ Base de datos migrada correctamente.");
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"Error al verificar la base de datos: {ex.Message}");
+        Console.WriteLine($"❌ Error al migrar la base de datos: {ex.Message}");
+        Console.WriteLine($"❌ Stack trace: {ex.StackTrace}");
     }
 
     var storage = scope.ServiceProvider.GetRequiredService<BeastVault.Api.Infrastructure.Services.FileStorageService>();
