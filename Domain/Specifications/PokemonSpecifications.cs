@@ -322,3 +322,61 @@ public class NoTagsSpecification : IPokemonSpecification
         return query.Where(p => !p.PokemonTags.Any());
     }
 }
+
+/// <summary>
+/// Specification for filtering Pokemon by tag names (must have ALL specified tags)
+/// </summary>
+public class TagNamesSpecification : IPokemonSpecification
+{
+    private readonly string[] _tagNames;
+
+    public TagNamesSpecification(string[] tagNames)
+    {
+        _tagNames = tagNames ?? throw new ArgumentNullException(nameof(tagNames));
+    }
+
+    public IQueryable<PokemonEntity> Apply(IQueryable<PokemonEntity> query)
+    {
+        foreach (var tagName in _tagNames)
+        {
+            query = query.Where(p => p.PokemonTags.Any(pt => pt.Tag.Name == tagName));
+        }
+        return query;
+    }
+}
+
+/// <summary>
+/// Specification for filtering Pokemon that have ANY of the specified tag IDs
+/// </summary>
+public class AnyTagsSpecification : IPokemonSpecification
+{
+    private readonly int[] _tagIds;
+
+    public AnyTagsSpecification(int[] tagIds)
+    {
+        _tagIds = tagIds ?? throw new ArgumentNullException(nameof(tagIds));
+    }
+
+    public IQueryable<PokemonEntity> Apply(IQueryable<PokemonEntity> query)
+    {
+        return query.Where(p => p.PokemonTags.Any(pt => _tagIds.Contains(pt.TagId)));
+    }
+}
+
+/// <summary>
+/// Specification for filtering Pokemon that have ANY of the specified tag names
+/// </summary>
+public class AnyTagNamesSpecification : IPokemonSpecification
+{
+    private readonly string[] _tagNames;
+
+    public AnyTagNamesSpecification(string[] tagNames)
+    {
+        _tagNames = tagNames ?? throw new ArgumentNullException(nameof(tagNames));
+    }
+
+    public IQueryable<PokemonEntity> Apply(IQueryable<PokemonEntity> query)
+    {
+        return query.Where(p => p.PokemonTags.Any(pt => _tagNames.Contains(pt.Tag.Name)));
+    }
+}

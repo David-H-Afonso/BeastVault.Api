@@ -234,7 +234,8 @@ namespace BeastVault.Api.Endpoints
                         {
                             Id = pt.Tag.Id,
                             Name = pt.Tag.Name,
-                            ImagePath = pt.Tag.ImagePath
+                            ImagePath = pt.Tag.ImagePath,
+                            PokemonCount = 0 // Not relevant in Pokemon list context
                         })
                         .OrderBy(t => t.Name)
                         .ToList()

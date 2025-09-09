@@ -191,6 +191,21 @@ public record AdvancedPokemonQuery
     public int[]? TagIds { get; init; }
 
     /// <summary>
+    /// Filter by tag names (Pokémon must have ALL specified tags)
+    /// </summary>
+    public string[]? TagNames { get; init; }
+
+    /// <summary>
+    /// Filter by tag IDs where Pokémon must have ANY of the specified tags
+    /// </summary>
+    public int[]? AnyTagIds { get; init; }
+
+    /// <summary>
+    /// Filter by tag names where Pokémon must have ANY of the specified tags
+    /// </summary>
+    public string[]? AnyTagNames { get; init; }
+
+    /// <summary>
     /// Filter Pokémon that have no tags
     /// </summary>
     public bool? HasNoTags { get; init; }

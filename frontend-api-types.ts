@@ -198,6 +198,18 @@ export interface AdvancedPokemonQuery {
   originGame?: number;
   /** Filtro legacy de tipo Tera */
   teraType?: number;
+
+  // Filtros de tags
+  /** IDs de tags que el Pokémon DEBE tener (todos los tags especificados) */
+  tagIds?: number[];
+  /** Nombres de tags que el Pokémon DEBE tener (todos los tags especificados) */
+  tagNames?: string[];
+  /** IDs de tags donde el Pokémon PUEDE tener cualquiera de ellos */
+  anyTagIds?: number[];
+  /** Nombres de tags donde el Pokémon PUEDE tener cualquiera de ellos */
+  anyTagNames?: string[];
+  /** Filtrar Pokémon que no tienen ningún tag */
+  hasNoTags?: boolean;
 }
 
 export interface UpdatePokemonDto {
@@ -277,6 +289,27 @@ export interface StatsDto {
   statSpd: number;
   statSpe: number;
   statHpCurrent: number;
+}
+
+export interface TagDto {
+  /** ID único del tag */
+  id: number;
+  /** Nombre del tag */
+  name: string;
+  /** Ruta de la imagen del tag (opcional) */
+  imagePath?: string;
+  /** Número de Pokémon que tienen este tag */
+  pokemonCount: number;
+}
+
+export interface CreateTagDto {
+  /** Nombre del tag */
+  name: string;
+}
+
+export interface UpdateTagDto {
+  /** Nombre del tag */
+  name: string;
 }
 
 export interface MoveDto {
@@ -664,6 +697,32 @@ export interface PatchEndpoints {
   };
 }
 
+// POST endpoints for tags
+export type TagPostEndpoints = {
+  "/tags": {
+    body: CreateTagDto;
+    response: TagDto;
+  };
+  "/tags/{id}/image": {
+    params: { id: number };
+    body: FormData; // multipart/form-data with image file
+    response: TagDto;
+  };
+  "/pokemon/{pokemonId}/tags/{tagId}": {
+    params: { pokemonId: number; tagId: number };
+    response: void; // 204 No Content
+  };
+};
+
+// PUT endpoints for tags
+export type TagPutEndpoints = {
+  "/tags/{id}": {
+    params: { id: number };
+    body: UpdateTagDto;
+    response: TagDto;
+  };
+};
+
 // DELETE endpoints
 export interface DeleteEndpoints {
   "/pokemon/{id}/database": {
@@ -675,6 +734,22 @@ export interface DeleteEndpoints {
     response: DeletePokemonResponse;
   };
 }
+
+// DELETE endpoints for tags
+export type TagDeleteEndpoints = {
+  "/tags/{id}": {
+    params: { id: number };
+    response: void; // 204 No Content
+  };
+  "/tags/{id}/image": {
+    params: { id: number };
+    response: TagDto;
+  };
+  "/pokemon/{pokemonId}/tags/{tagId}": {
+    params: { pokemonId: number; tagId: number };
+    response: void; // 204 No Content
+  };
+};
 
 export type ImportEndpoints = {
   "/import": {
@@ -695,6 +770,21 @@ export type FileEndpoints = {
   "/export/database/{pokemonId}": {
     params: { pokemonId: number };
     response: Blob; // application/octet-stream
+  };
+};
+
+export type TagEndpoints = {
+  // GET endpoints
+  "/tags": {
+    response: TagDto[];
+  };
+  "/tags/{id}": {
+    params: { id: number };
+    response: TagDto;
+  };
+  "/tags/{id}/pokemon": {
+    params: { id: number };
+    response: PagedResult<PokemonListItemDto>;
   };
 };
 
@@ -736,6 +826,10 @@ export type HealthEndpoints = {
 export type AllEndpoints = PokemonEndpoints &
   ImportEndpoints &
   FileEndpoints &
+  TagEndpoints &
+  TagPostEndpoints &
+  TagPutEndpoints &
+  TagDeleteEndpoints &
   ScanEndpoints &
   MaintenanceEndpoints &
   AdminEndpoints &
@@ -762,16 +856,30 @@ export type AllEndpoints = PokemonEndpoints &
  * 5. FILTROS AVANZADOS: Usar AdvancedPokemonQuery para consultas complejas con
  *    filtrado por tipos, generaciones, ordenamiento múltiple, etc.
  *
- * 6. TIPOS OPCIONALES: Los campos marcados con ? son opcionales y pueden ser undefined.
+ * 6. FILTRADO POR TAGS: Ejemplo de filtros de tags:
+ *    - tagIds: [1, 2] = Pokémon que tienen AMBOS tags 1 Y 2
+ *    - anyTagIds: [1, 2] = Pokémon que tienen tag 1 O tag 2 (o ambos)
+ *    - tagNames: ["Favoritos", "Competitivo"] = Pokémon con ambos tags por nombre
+ *    - anyTagNames: ["Favoritos", "Shiny"] = Pokémon con cualquiera de estos tags
+ *    - hasNoTags: true = Pokémon sin ningún tag asignado
  *
- * 7. ENUMS: Los enums numéricos deben usarse con sus valores numéricos, no los nombres.
+ * 7. TIPOS OPCIONALES: Los campos marcados con ? son opcionales y pueden ser undefined.
  *
- * 8. ERRORES: Todos los endpoints pueden devolver errores HTTP estándar (400, 404, 500).
+ * 8. ENUMS: Los enums numéricos deben usarse con sus valores numéricos, no los nombres.
+ *
+ * 9. ERRORES: Todos los endpoints pueden devolver errores HTTP estándar (400, 404, 500).
  *    Manejar estos errores apropiadamente en el frontend.
  *
- * 9. CORS: Asegúrate de que el frontend esté configurado para hacer peticiones al puerto
- *    correcto de la API (generalmente https://localhost:7xxx o http://localhost:5xxx).
+ * 10. CORS: Asegúrate de que el frontend esté configurado para hacer peticiones al puerto
+ *     correcto de la API (generalmente https://localhost:7xxx o http://localhost:5xxx).
  *
- * 10. TAGS: Los endpoints están organizados por tags (Pokemon, Import, Files, etc.)
- *     para mejor organización en Swagger/OpenAPI.
+ * 11. TAGS: Sistema completo de etiquetado de Pokémon disponible.
+ *     - GET /tags: Obtener todos los tags con conteo de Pokémon
+ *     - CRUD completo: crear, editar, eliminar tags
+ *     - Asignar/desasignar tags a Pokémon específicos
+ *     - Subir/eliminar imágenes de tags
+ *     - Obtener lista de Pokémon por tag
+ *
+ * 12. ORGANIZACIÓN API: Los endpoints están organizados por categorías
+ *     (Pokemon, Import, Files, Tags, etc.) para mejor organización en Swagger/OpenAPI.
  */

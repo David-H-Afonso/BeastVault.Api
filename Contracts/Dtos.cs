@@ -399,6 +399,11 @@ namespace BeastVault.Api.Contracts
         /// Optional path to tag image (PNG)
         /// </summary>
         public string? ImagePath { get; init; }
+
+        /// <summary>
+        /// Number of Pokemon that have this tag
+        /// </summary>
+        public int PokemonCount { get; init; }
     }
 
     /// <summary>

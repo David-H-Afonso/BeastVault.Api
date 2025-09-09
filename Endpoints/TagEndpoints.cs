@@ -18,7 +18,8 @@ namespace BeastVault.Api.Endpoints
                     {
                         Id = t.Id,
                         Name = t.Name,
-                        ImagePath = t.ImagePath
+                        ImagePath = t.ImagePath,
+                        PokemonCount = db.PokemonTags.Count(pt => pt.TagId == t.Id)
                     })
                     .ToListAsync();
 
@@ -32,11 +33,14 @@ namespace BeastVault.Api.Endpoints
                 if (tag == null)
                     return Results.NotFound();
 
+                var pokemonCount = await db.PokemonTags.CountAsync(pt => pt.TagId == id);
+
                 return Results.Ok(new TagDto
                 {
                     Id = tag.Id,
                     Name = tag.Name,
-                    ImagePath = tag.ImagePath
+                    ImagePath = tag.ImagePath,
+                    PokemonCount = pokemonCount
                 });
             }).WithTags("Tags");
 
@@ -62,7 +66,8 @@ namespace BeastVault.Api.Endpoints
                 {
                     Id = tag.Id,
                     Name = tag.Name,
-                    ImagePath = tag.ImagePath
+                    ImagePath = tag.ImagePath,
+                    PokemonCount = 0 // New tag has no Pokemon assigned yet
                 });
             }).WithTags("Tags");
 
@@ -83,11 +88,14 @@ namespace BeastVault.Api.Endpoints
                 tag.Name = request.Name;
                 await db.SaveChangesAsync();
 
+                var pokemonCount = await db.PokemonTags.CountAsync(pt => pt.TagId == id);
+
                 return Results.Ok(new TagDto
                 {
                     Id = tag.Id,
                     Name = tag.Name,
-                    ImagePath = tag.ImagePath
+                    ImagePath = tag.ImagePath,
+                    PokemonCount = pokemonCount
                 });
             }).WithTags("Tags");
 
@@ -166,11 +174,14 @@ namespace BeastVault.Api.Endpoints
                 tag.ImagePath = filePath;
                 await db.SaveChangesAsync();
 
+                var pokemonCount = await db.PokemonTags.CountAsync(pt => pt.TagId == id);
+
                 return Results.Ok(new TagDto
                 {
                     Id = tag.Id,
                     Name = tag.Name,
-                    ImagePath = tag.ImagePath
+                    ImagePath = tag.ImagePath,
+                    PokemonCount = pokemonCount
                 });
             }).WithTags("Tags");
 
@@ -201,11 +212,14 @@ namespace BeastVault.Api.Endpoints
                 tag.ImagePath = null;
                 await db.SaveChangesAsync();
 
+                var pokemonCount = await db.PokemonTags.CountAsync(pt => pt.TagId == id);
+
                 return Results.Ok(new TagDto
                 {
                     Id = tag.Id,
                     Name = tag.Name,
-                    ImagePath = tag.ImagePath
+                    ImagePath = tag.ImagePath,
+                    PokemonCount = pokemonCount
                 });
             }).WithTags("Tags");
 
@@ -223,7 +237,8 @@ namespace BeastVault.Api.Endpoints
                     {
                         Id = pt.Tag.Id,
                         Name = pt.Tag.Name,
-                        ImagePath = pt.Tag.ImagePath
+                        ImagePath = pt.Tag.ImagePath,
+                        PokemonCount = 0 // Not relevant in this context
                     })
                     .OrderBy(t => t.Name)
                     .ToListAsync();
@@ -291,7 +306,8 @@ namespace BeastVault.Api.Endpoints
                     {
                         Id = pt.Tag.Id,
                         Name = pt.Tag.Name,
-                        ImagePath = pt.Tag.ImagePath
+                        ImagePath = pt.Tag.ImagePath,
+                        PokemonCount = 0 // Not relevant in this context
                     })
                     .OrderBy(t => t.Name)
                     .ToListAsync();
