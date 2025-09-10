@@ -22,6 +22,15 @@ Third-party dependencies:
 - PKHeX.Core: MIT License
   https://github.com/kwsch/PKHeX/blob/master/LICENSE
 
+- PokéAPI: BSD License
+  https://github.com/PokeAPI/pokeapi/blob/master/LICENSE.rst
+
+- pokemon-sprites (bamq): MIT License
+  https://github.com/bamq/pokemon-sprites/blob/main/LICENSE
+
+- pokesprite (msikma): MIT License
+  https://github.com/msikma/pokesprite/blob/master/LICENSE
+
 - SQLite: Public Domain
   https://www.sqlite.org/copyright.html
 
