@@ -11,8 +11,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace BeastVault.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20250908115659_AddTagSystem")]
-    partial class AddTagSystem
+    [Migration("20250910204519_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -292,6 +292,8 @@ namespace BeastVault.Api.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("FileId");
+
                     b.HasIndex("OriginGame");
 
                     b.HasIndex("SpeciesId", "IsShiny");
@@ -454,6 +456,17 @@ namespace BeastVault.Api.Migrations
                     b.Navigation("File");
 
                     b.Navigation("Tag");
+                });
+
+            modelBuilder.Entity("BeastVault.Api.Domain.Entities.PokemonEntity", b =>
+                {
+                    b.HasOne("BeastVault.Api.Domain.Entities.FileEntity", "File")
+                        .WithMany()
+                        .HasForeignKey("FileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("File");
                 });
 
             modelBuilder.Entity("BeastVault.Api.Domain.Entities.PokemonTagEntity", b =>
