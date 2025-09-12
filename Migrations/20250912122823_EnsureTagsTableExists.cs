@@ -55,6 +55,13 @@ namespace BeastVault.Api.Migrations
             migrationBuilder.Sql(@"
                 CREATE INDEX IF NOT EXISTS ""IX_FileTags_TagId"" ON ""FileTags"" (""TagId"");
             ");
+
+            // Verify tables were created successfully
+            migrationBuilder.Sql(@"
+                INSERT OR IGNORE INTO ""Tags"" (""Name"", ""ImagePath"") 
+                VALUES ('System Check', NULL);
+                DELETE FROM ""Tags"" WHERE ""Name"" = 'System Check';
+            ");
         }
 
         /// <inheritdoc />
