@@ -104,8 +104,8 @@ namespace BeastVault.Api.Endpoints
                 return Results.Ok(imported);
             })
             .WithName("ImportPokemonFiles")
-            .WithSummary("Import PKM files (.pk9, .pk8, etc.)")
-            .WithDescription("Import one or multiple Pokémon files in PKM format. Supports all formats (.pk1 to .pk9). Files are stored both on disk and in database to preserve the original.")
+            .WithSummary("Import PKM files (.pk9, .pb9, .pa9, .pa8, .pk8, etc.)")
+            .WithDescription("Import one or multiple Pokémon files in PKM format. Supports all formats (.pk1 to .pk9, .pb7/.pb8/.pb9, .pa8/.pa9). Files are stored both on disk and in database to preserve the original.")
             .WithTags("Import")
             .Accepts<IFormFileCollection>("multipart/form-data")
             .Produces<List<object>>(200)

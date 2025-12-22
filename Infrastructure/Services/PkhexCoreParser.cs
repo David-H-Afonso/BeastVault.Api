@@ -102,7 +102,7 @@ namespace BeastVault.Api.Infrastructure.Services
                 }
 
                 // Extract enhanced data
-                var teraType = pk is ITeraType t ? (int?)t.TeraType : null;
+                var teraType = pk is ITeraType t ? (int?)t.TeraTypeOriginal : null;
                 var form = pk.Form;
                 var formArg = GetProp<uint>("FormArgument");
                 var metLoc = GetProp<int>("MetLocation", GetProp<int>("Met_Location"));

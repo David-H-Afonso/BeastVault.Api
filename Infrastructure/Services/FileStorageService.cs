@@ -57,16 +57,26 @@ namespace BeastVault.Api.Infrastructure.Services
 
         public string SaveBackup(string originalFileName, string ext, byte[] bytes, DateTime? importDate = null)
         {
-            // Crear estructura de backup: backup/{formato}/{año}/
+            // Normalize extension handling for all PKHeX formats
+            ext = ext.TrimStart('.').ToLowerInvariant();
+
+            // Recognize all PKHeX formats including pa8 (Legends Arceus), pa9 (Legends Z-A) and pb9 (Pokemon Box Gen 9)
+            var validExtensions = new[] { "pk1", "pk2", "pk3", "pk4", "pk5", "pk6", "pk7", "pk8", "pk9", "pb7", "pb8", "pb9", "pa8", "pa9" };
+            if (!validExtensions.Contains(ext))
+            {
+                Console.WriteLine($"Warning: Unrecognized PKM format: {ext}");
+            }
+
+            // Create backup structure: backup/{format}/{year}/
             var year = (importDate ?? DateTime.Now).Year.ToString();
-            var formatFolder = ext.TrimStart('.').ToLowerInvariant();
+            var formatFolder = ext;
             var backupDir = Path.Combine(_backupPath, formatFolder, year);
 
             Directory.CreateDirectory(backupDir);
 
-            // Verificar si ya existe un backup con el mismo contenido (mismo SHA256)
+            // Check if a backup with the same content already exists (same SHA256)
             var incomingHash = ComputeSha256(bytes);
-            var existingFiles = Directory.GetFiles(backupDir, $"*.{formatFolder}");
+            var existingFiles = Directory.GetFiles(backupDir, $"*.{ext}");
 
             foreach (var existingFile in existingFiles)
             {
@@ -88,7 +98,7 @@ namespace BeastVault.Api.Infrastructure.Services
                 }
             }
 
-            // No existe backup duplicado, crear nuevo
+            // No duplicate backup exists, create new one
             var backupFilePath = Path.Combine(backupDir, originalFileName);
             File.WriteAllBytes(backupFilePath, bytes);
 

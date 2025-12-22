@@ -13,17 +13,17 @@ namespace BeastVault.Api.Infrastructure.Configuration
         private readonly IConfiguration _configuration;
 
         // Rutas configuradas
-        public string DatabaseDirectory { get; private set; }
-        public string DatabasePath { get; private set; }
-        public string PokemonFilesDirectory { get; private set; }
-        public string BackupDirectory { get; private set; }
+        public string DatabaseDirectory { get; private set; } = string.Empty;
+        public string DatabasePath { get; private set; } = string.Empty;
+        public string PokemonFilesDirectory { get; private set; } = string.Empty;
+        public string BackupDirectory { get; private set; } = string.Empty;
 
         // Información de entorno
         public bool IsDocker { get; private set; }
         public bool IsWindows { get; private set; }
         public bool IsMacOS { get; private set; }
         public bool IsLinux { get; private set; }
-        public string PlatformName { get; private set; }
+        public string PlatformName { get; private set; } = string.Empty;
 
         public StorageConfiguration(IConfiguration configuration)
         {
@@ -79,20 +79,20 @@ namespace BeastVault.Api.Infrastructure.Configuration
             {
                 // Usar la ruta de variable de entorno
                 DatabasePath = envDbPath;
-                DatabaseDirectory = Path.GetDirectoryName(envDbPath);
+                DatabaseDirectory = Path.GetDirectoryName(envDbPath) ?? string.Empty;
             }
             else if (!string.IsNullOrEmpty(configDbPath))
             {
                 // Usar la ruta de appsettings.json
                 DatabasePath = configDbPath;
-                DatabaseDirectory = Path.GetDirectoryName(configDbPath);
+                DatabaseDirectory = Path.GetDirectoryName(configDbPath) ?? string.Empty;
             }
             else if (!string.IsNullOrEmpty(connectionString) && connectionString.Contains("Data Source="))
             {
                 // Extraer ruta de la conexión
                 var dbPath = connectionString.Split("Data Source=")[1].Split(';')[0].Trim();
                 DatabasePath = dbPath;
-                DatabaseDirectory = Path.GetDirectoryName(dbPath);
+                DatabaseDirectory = Path.GetDirectoryName(dbPath) ?? string.Empty;
             }
             else
             {
@@ -239,12 +239,12 @@ namespace BeastVault.Api.Infrastructure.Configuration
 
             // Asegurar que el directorio existe
             var directory = Path.GetDirectoryName(newPath);
-            if (!Directory.Exists(directory))
+            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
                 Directory.CreateDirectory(directory);
 
             // Actualizar rutas
             DatabasePath = newPath;
-            DatabaseDirectory = directory;
+            DatabaseDirectory = directory ?? string.Empty;
 
             Console.WriteLine($"Database path updated: {DatabasePath}");
             return DatabasePath;

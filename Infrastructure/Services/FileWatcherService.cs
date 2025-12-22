@@ -245,11 +245,11 @@ namespace BeastVault.Api.Infrastructure.Services
         {
             var normalizedFilePath = Path.GetFullPath(filePath);
             var normalizedBackupPath = Path.GetFullPath(_backupPath);
-            
+
             // Check if file is in backup directory
             if (normalizedFilePath.StartsWith(normalizedBackupPath, StringComparison.OrdinalIgnoreCase))
                 return true;
-            
+
             // Check if file is in any directory starting with . (hidden/system directories)
             var directoryPath = Path.GetDirectoryName(normalizedFilePath);
             if (directoryPath != null)
@@ -261,7 +261,7 @@ namespace BeastVault.Api.Infrastructure.Services
                         return true;
                 }
             }
-            
+
             return false;
         }
 
@@ -271,7 +271,9 @@ namespace BeastVault.Api.Infrastructure.Services
             return extension switch
             {
                 ".pk1" or ".pk2" or ".pk3" or ".pk4" or ".pk5" or ".pk6" or ".pk7" or ".pk8" or ".pk9" => true,
-                ".pb7" or ".pb8" => true, // Pokemon Box files
+                ".pb7" or ".pb8" or ".pb9" => true, // Pokemon Box files
+                ".pa8" => true, // Legends Arceus
+                ".pa9" => true, // Legends Z-A
                 ".ek1" or ".ek2" or ".ek3" or ".ek4" or ".ek5" or ".ek6" or ".ek7" or ".ek8" or ".ek9" => true, // Encrypted
                 ".ekx" => true, // Encrypted batch
                 _ => false

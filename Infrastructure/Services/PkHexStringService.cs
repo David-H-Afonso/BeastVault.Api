@@ -35,8 +35,8 @@ namespace BeastVault.Api.Infrastructure.Services
             try
             {
                 // Use PKHeX's form names
-                var formNames = FormConverter.GetFormList((ushort)speciesId, GameInfo.Strings.types, GameInfo.Strings.forms, GameInfo.GenderSymbolASCII, EntityContext.Gen9);
-                
+                var formNames = FormConverter.GetFormList((ushort)speciesId, GameInfo.Strings.Types, GameInfo.Strings.forms, GameInfo.GenderSymbolASCII, EntityContext.Gen9);
+
                 if (formNames != null && formId < formNames.Length)
                 {
                     var formName = formNames[formId];
@@ -45,7 +45,7 @@ namespace BeastVault.Api.Infrastructure.Services
                         return "";
                     return formName;
                 }
-                
+
                 return "";
             }
             catch

@@ -21,7 +21,7 @@
 
 export type ImportStatus = "imported" | "duplicate" | "error";
 
-export type FileFormat
+export type FileFormat =
   | "pk1"
   | "pk2"
   | "pk3"
@@ -643,6 +643,9 @@ export const API_CONSTANTS = {
     ".pk9",
     ".pb7",
     ".pb8",
+    ".pb9",
+    ".pa8",
+    ".pa9",
     ".ek1",
     ".ek2",
     ".ek3",

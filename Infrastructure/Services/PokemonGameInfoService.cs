@@ -124,8 +124,23 @@ public static class PokemonGameInfoService
             return formatGeneration;
         }
 
-        // For modern formats (Gen 4+), use OriginGame as it's more reliable
-        return GetGameGeneration(originGame);
+        // If format generation is unknown (returned 0), use OriginGame
+        if (formatGeneration == 0)
+        {
+            var gameGen = GetGameGeneration(originGame);
+            // If game generation is also 0, default to 9 for modern unknown formats
+            return gameGen > 0 ? gameGen : 9;
+        }
+
+        // For modern formats (Gen 4+), prefer the format generation
+        // but validate with OriginGame if it's reasonable
+        var originGameGen = GetGameGeneration(originGame);
+        if (originGameGen > 0 && Math.Abs(originGameGen - formatGeneration) <= 1)
+        {
+            return originGameGen; // Use OriginGame if it's close to format generation
+        }
+
+        return formatGeneration;
     }
 
     /// <summary>
@@ -133,7 +148,10 @@ public static class PokemonGameInfoService
     /// </summary>
     private static int GetGenerationFromFileFormat(string format)
     {
-        return format.ToLower() switch
+        // Normalize format: remove leading dot and convert to lowercase
+        var normalizedFormat = format?.TrimStart('.').ToLower() ?? string.Empty;
+
+        return normalizedFormat switch
         {
             "pk1" => 1,
             "pk2" => 2,
@@ -142,9 +160,9 @@ public static class PokemonGameInfoService
             "pk5" => 5,
             "pk6" => 6,
             "pk7" or "pb7" => 7,
-            "pk8" or "pb8" => 8,
-            "pk9" => 9,
-            _ => 1 // Default fallback
+            "pk8" or "pb8" or "pa8" => 8, // pa8 is Legends Arceus (Gen 8)
+            "pk9" or "pb9" or "pa9" => 9, // pk9 is standard Gen 9, pb9 is Legends Z-A box, pa9 is Legends Z-A
+            _ => 0 // Unknown format - will be resolved by OriginGame
         };
     }
 
@@ -243,8 +261,8 @@ public static class PokemonGameInfoService
     {
         var results = new List<int>();
 
-        // Get personal table for type information
-        var pt = PersonalTable.SWSH; // Using Sword/Shield as default, could be parameterized
+        // Get personal table for type information - use SV (Gen9) for most up-to-date data
+        var pt = PersonalTable.SV; // Using Scarlet/Violet (Gen9) for latest Pokemon data
 
         for (int i = 1; i < pt.MaxSpeciesID; i++)
         {

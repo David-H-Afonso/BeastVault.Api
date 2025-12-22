@@ -18,8 +18,10 @@ Scans the user's Documents/BeastVault directory for new Pokemon files and automa
 Files already in the database (based on SHA256 hash) will be skipped.
 
 Supported file formats:
-- .pk1, .pk2, .pk3, .pk4, .pk5, .pk6, .pk7, .pk8, .pk9
-- .pb7, .pb8 (Pokemon Box files)
+- .pk1, .pk2, .pk3, .pk4, .pk5, .pk6, .pk7, .pk8, .pk9 (Standard PKM files)
+- .pb7, .pb8, .pb9 (Pokemon Box files)
+- .pa8 (Legends Arceus)
+- .pa9 (Legends Z-A)
 - .ek1, .ek2, .ek3, .ek4, .ek5, .ek6, .ek7, .ek8, .ek9 (Encrypted)
 - .ekx (Encrypted batch)
 ");
@@ -117,7 +119,9 @@ Supported file formats:
             return extension switch
             {
                 ".pk1" or ".pk2" or ".pk3" or ".pk4" or ".pk5" or ".pk6" or ".pk7" or ".pk8" or ".pk9" => true,
-                ".pb7" or ".pb8" => true,
+                ".pb7" or ".pb8" or ".pb9" => true, // Pokemon Box formats
+                ".pa8" => true, // Legends Arceus
+                ".pa9" => true, // Legends Z-A
                 ".ek1" or ".ek2" or ".ek3" or ".ek4" or ".ek5" or ".ek6" or ".ek7" or ".ek8" or ".ek9" => true,
                 ".ekx" => true,
                 _ => false
