@@ -73,9 +73,25 @@ app.MapConfigurationEndpoints();
 // Endpoint para buscar sprites custom por patrón (retorna la URL del primero encontrado)
 app.MapGet("/custom-sprites/search/{pattern}", (string pattern) =>
 {
-    var assetsPath = Path.Combine(Directory.GetCurrentDirectory(), "assets");
+    // Try multiple possible locations for assets folder
+    var possiblePaths = new[]
+    {
+        Path.Combine(Directory.GetCurrentDirectory(), "assets"),
+        Path.Combine(AppContext.BaseDirectory, "assets"),
+        Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets")
+    };
     
-    if (!Directory.Exists(assetsPath))
+    string? assetsPath = null;
+    foreach (var path in possiblePaths)
+    {
+        if (Directory.Exists(path))
+        {
+            assetsPath = path;
+            break;
+        }
+    }
+    
+    if (assetsPath == null)
     {
         return Results.NotFound();
     }
@@ -107,13 +123,36 @@ app.MapGet("/custom-sprites/search/{pattern}", (string pattern) =>
 // Servir sprites custom desde la carpeta assets
 app.MapGet("/custom-sprites/{fileName}", (string fileName) =>
 {
-    var assetsPath = Path.Combine(Directory.GetCurrentDirectory(), "assets");
-    
-    // Si la carpeta no existe, retornar 404
-    if (!Directory.Exists(assetsPath))
+    // Try multiple possible locations for assets folder
+    var possiblePaths = new[]
     {
+        Path.Combine(Directory.GetCurrentDirectory(), "assets"),
+        Path.Combine(AppContext.BaseDirectory, "assets"),
+        Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets")
+    };
+    
+    string? assetsPath = null;
+    foreach (var path in possiblePaths)
+    {
+        if (Directory.Exists(path))
+        {
+            assetsPath = path;
+            break;
+        }
+    }
+    
+    // Si la carpeta no existe en ninguna ubicación, retornar 404
+    if (assetsPath == null)
+    {
+        Console.WriteLine($"❌ Assets folder not found. Tried:");
+        foreach (var path in possiblePaths)
+        {
+            Console.WriteLine($"   - {path}");
+        }
         return Results.NotFound();
     }
+    
+    Console.WriteLine($"📂 Using assets path: {assetsPath}");
     
     // Primero intentar encontrar el archivo exacto
     var filePath = Path.GetFullPath(Path.Combine(assetsPath, fileName));
@@ -122,11 +161,13 @@ app.MapGet("/custom-sprites/{fileName}", (string fileName) =>
     if (!filePath.StartsWith(Path.GetFullPath(assetsPath) + Path.DirectorySeparatorChar) &&
         !filePath.Equals(Path.GetFullPath(assetsPath)))
     {
+        Console.WriteLine($"❌ Security violation: {filePath} is outside assets directory");
         return Results.BadRequest("Invalid file path");
     }
 
     if (File.Exists(filePath))
     {
+        Console.WriteLine($"✅ Found exact file: {filePath}");
         var contentType = fileName.EndsWith(".png") ? "image/png" :
                           fileName.EndsWith(".webp") ? "image/webp" :
                           "application/octet-stream";
@@ -141,13 +182,19 @@ app.MapGet("/custom-sprites/{fileName}", (string fileName) =>
         var fileNameWithoutExtension = Path.GetFileNameWithoutExtension(fileName);
         var extension = Path.GetExtension(fileName);
         
+        Console.WriteLine($"🔍 Searching for pattern: {fileNameWithoutExtension}*{extension}");
+        
         // Buscar archivos que comiencen con el mismo nombre (ignorando timestamps)
         var matchingFiles = Directory.GetFiles(assetsPath, fileNameWithoutExtension + "*" + extension);
+        
+        Console.WriteLine($"📁 Found {matchingFiles.Length} matching files");
         
         if (matchingFiles.Length > 0)
         {
             // Usar el primer archivo coincidente (idealmente el más reciente)
             var matchedFile = matchingFiles[0];
+            Console.WriteLine($"✅ Using matched file: {matchedFile}");
+            
             var contentType = fileName.EndsWith(".png") ? "image/png" :
                               fileName.EndsWith(".webp") ? "image/webp" :
                               "application/octet-stream";
@@ -157,9 +204,10 @@ app.MapGet("/custom-sprites/{fileName}", (string fileName) =>
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"Error searching for file pattern: {ex.Message}");
+        Console.WriteLine($"❌ Error searching for file pattern: {ex.Message}");
     }
 
+    Console.WriteLine($"❌ File not found: {fileName}");
     return Results.NotFound();
 })
 .WithName("GetCustomSprite")
