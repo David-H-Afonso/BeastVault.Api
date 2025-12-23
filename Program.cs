@@ -74,7 +74,14 @@ app.MapConfigurationEndpoints();
 app.MapGet("/custom-sprites/{fileName}", (string fileName) =>
 {
     var assetsPath = Path.Combine(Directory.GetCurrentDirectory(), "assets");
-    var filePath = Path.Combine(assetsPath, fileName);
+    var filePath = Path.GetFullPath(Path.Combine(assetsPath, fileName));
+
+    // Validate that the resolved path is still within the assets directory
+    if (!filePath.StartsWith(Path.GetFullPath(assetsPath) + Path.DirectorySeparatorChar) &&
+        !filePath.Equals(Path.GetFullPath(assetsPath)))
+    {
+        return Results.BadRequest("Invalid file path");
+    }
 
     if (!File.Exists(filePath))
     {
@@ -90,6 +97,9 @@ app.MapGet("/custom-sprites/{fileName}", (string fileName) =>
 .WithName("GetCustomSprite")
 .WithTags("Files")
 .Produces(200, contentType: "image/png")
+.Produces(200, contentType: "image/webp")
+.Produces(200, contentType: "application/octet-stream")
+.Produces(400)
 .Produces(404);
 
 // Asegurar que exista la carpeta de almacenamiento y la BD
