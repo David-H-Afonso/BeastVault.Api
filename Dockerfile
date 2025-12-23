@@ -16,11 +16,13 @@ FROM mcr.microsoft.com/dotnet/aspnet:9.0
 WORKDIR /app
 COPY --from=build /out .
 
-# Crear directorios para persistencia de datos y assets
+# Copiar archivos de assets desde el contexto de build
+COPY assets /app/assets
+
+# Crear directorios para persistencia de datos
 RUN mkdir -p /app/data
 RUN mkdir -p /app/pokemon
 RUN mkdir -p /app/pokemon/backup
-RUN mkdir -p /app/assets
 
 # Configurar volúmenes para persistencia de datos
 VOLUME ["/app/data", "/app/pokemon", "/app/assets"]
