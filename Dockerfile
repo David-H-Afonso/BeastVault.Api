@@ -16,13 +16,14 @@ FROM mcr.microsoft.com/dotnet/aspnet:9.0
 WORKDIR /app
 COPY --from=build /out .
 
-# Crear directorios para persistencia de datos
+# Crear directorios para persistencia de datos y assets
 RUN mkdir -p /app/data
 RUN mkdir -p /app/pokemon
 RUN mkdir -p /app/pokemon/backup
+RUN mkdir -p /app/assets
 
 # Configurar volúmenes para persistencia de datos
-VOLUME ["/app/data", "/app/pokemon"]
+VOLUME ["/app/data", "/app/pokemon", "/app/assets"]
 
 # Variables de entorno para configuración de rutas (configurables desde CasaOS)
 ENV BEASTVAULT_DB_PATH=/app/data/beastvault.db
