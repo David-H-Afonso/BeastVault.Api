@@ -74,12 +74,28 @@ app.MapConfigurationEndpoints();
 app.MapGet("/custom-sprites/search/{pattern}", (string pattern) =>
 {
     // Try multiple possible locations for assets folder
-    var possiblePaths = new[]
+    var possiblePaths = new List<string>
     {
         Path.Combine(Directory.GetCurrentDirectory(), "assets"),
         Path.Combine(AppContext.BaseDirectory, "assets"),
         Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets")
     };
+    
+    // Check environment variable for custom assets path
+    var envAssetsPath = Environment.GetEnvironmentVariable("BEASTVAULT_ASSETS_PATH");
+    if (!string.IsNullOrEmpty(envAssetsPath))
+    {
+        possiblePaths.Insert(0, envAssetsPath);
+    }
+    
+    // For Electron: try parent directory (resources/backend/assets)
+    var parentDir = Directory.GetParent(AppContext.BaseDirectory)?.FullName;
+    if (parentDir != null)
+    {
+        possiblePaths.Add(Path.Combine(parentDir, "assets"));
+    }
+    
+    possiblePaths = possiblePaths.Distinct().ToList();
     
     string? assetsPath = null;
     foreach (var path in possiblePaths)
@@ -124,12 +140,28 @@ app.MapGet("/custom-sprites/search/{pattern}", (string pattern) =>
 app.MapGet("/custom-sprites/{fileName}", (string fileName) =>
 {
     // Try multiple possible locations for assets folder
-    var possiblePaths = new[]
+    var possiblePaths = new List<string>
     {
         Path.Combine(Directory.GetCurrentDirectory(), "assets"),
         Path.Combine(AppContext.BaseDirectory, "assets"),
         Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets")
     };
+    
+    // Check environment variable for custom assets path
+    var envAssetsPath = Environment.GetEnvironmentVariable("BEASTVAULT_ASSETS_PATH");
+    if (!string.IsNullOrEmpty(envAssetsPath))
+    {
+        possiblePaths.Insert(0, envAssetsPath);
+    }
+    
+    // For Electron: try parent directory (resources/backend/assets)
+    var parentDir = Directory.GetParent(AppContext.BaseDirectory)?.FullName;
+    if (parentDir != null)
+    {
+        possiblePaths.Add(Path.Combine(parentDir, "assets"));
+    }
+    
+    possiblePaths = possiblePaths.Distinct().ToList();
     
     string? assetsPath = null;
     foreach (var path in possiblePaths)
