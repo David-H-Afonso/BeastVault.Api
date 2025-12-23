@@ -242,26 +242,70 @@ namespace BeastVault.Api.Endpoints
                     );
 
                 // Create the final DTOs with tags
-                var resultItems = items.Select(item => new PokemonListItemDto
+                var resultItems = items.Select(item =>
                 {
-                    Id = item.Id,
-                    SpeciesId = item.SpeciesId,
-                    SpeciesName = PkHexStringService.GetSpeciesName(item.SpeciesId),
-                    Form = item.Form,
-                    FormName = PkHexStringService.GetFormName(item.SpeciesId, item.Form),
-                    Nickname = item.Nickname,
-                    Level = item.Level,
-                    IsShiny = item.IsShiny,
-                    BallId = item.BallId,
-                    TeraType = item.TeraType,
-                    HeldItemId = item.HeldItemId,
-                    Gender = item.Gender,
-                    SpriteKey = item.SpriteKey,
-                    OriginGeneration = item.OriginGeneration,
-                    CapturedGeneration = item.CapturedGeneration,
-                    CanGigantamax = item.CanGigantamax,
-                    HasMegaStone = item.HasMegaStone,
-                    Tags = pokemonTags.GetValueOrDefault(item.Id, new List<TagDto>())
+                    // Get form name - adjust for Mega Evolution if applicable
+                    string formName = PkHexStringService.GetFormName(item.SpeciesId, item.Form);
+
+                    // Override form name for Mega Evolution Pokemon
+                    if (item.HasMegaStone && item.Form > 0)
+                    {
+                        // Special handling for Pokemon with multiple Mega forms
+                        if (item.SpeciesId == 6) // Charizard
+                        {
+                            formName = item.Form == 1 ? "Mega X" : "Mega Y";
+                        }
+                        else if (item.SpeciesId == 26) // Raichu
+                        {
+                            formName = item.Form == 1 ? "Mega X" : "Mega Y";
+                        }
+                        else if (item.SpeciesId == 150) // Mewtwo
+                        {
+                            formName = item.Form == 1 ? "Mega X" : "Mega Y";
+                        }
+                        else if (item.SpeciesId == 359 && item.Form == 2) // Absol Z
+                        {
+                            formName = "Mega Z";
+                        }
+                        else if (item.SpeciesId == 445 && item.Form == 2) // Garchomp Z
+                        {
+                            formName = "Mega Z";
+                        }
+                        else if (item.SpeciesId == 448 && item.Form == 2) // Lucario Z
+                        {
+                            formName = "Mega Z";
+                        }
+                        else if (item.SpeciesId == 678 && item.Form == 2) // Meowstic Female
+                        {
+                            formName = "Mega (Female)";
+                        }
+                        else
+                        {
+                            formName = "Mega";
+                        }
+                    }
+
+                    return new PokemonListItemDto
+                    {
+                        Id = item.Id,
+                        SpeciesId = item.SpeciesId,
+                        SpeciesName = PkHexStringService.GetSpeciesName(item.SpeciesId),
+                        Form = item.Form,
+                        FormName = formName,
+                        Nickname = item.Nickname,
+                        Level = item.Level,
+                        IsShiny = item.IsShiny,
+                        BallId = item.BallId,
+                        TeraType = item.TeraType,
+                        HeldItemId = item.HeldItemId,
+                        Gender = item.Gender,
+                        SpriteKey = item.SpriteKey,
+                        OriginGeneration = item.OriginGeneration,
+                        CapturedGeneration = item.CapturedGeneration,
+                        CanGigantamax = item.CanGigantamax,
+                        HasMegaStone = item.HasMegaStone,
+                        Tags = pokemonTags.GetValueOrDefault(item.Id, new List<TagDto>())
+                    };
                 }).ToList();
 
                 // Get query statistics for monitoring

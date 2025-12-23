@@ -70,6 +70,38 @@ app.MapScanEndpoints();
 app.MapMaintenanceEndpoints();
 app.MapConfigurationEndpoints();
 
+// Servir sprites custom desde la carpeta assets
+app.MapGet("/custom-sprites/{fileName}", (string fileName) =>
+{
+    var assetsPath = Path.Combine(Directory.GetCurrentDirectory(), "assets");
+    var filePath = Path.GetFullPath(Path.Combine(assetsPath, fileName));
+
+    // Validate that the resolved path is still within the assets directory
+    if (!filePath.StartsWith(Path.GetFullPath(assetsPath) + Path.DirectorySeparatorChar) &&
+        !filePath.Equals(Path.GetFullPath(assetsPath)))
+    {
+        return Results.BadRequest("Invalid file path");
+    }
+
+    if (!File.Exists(filePath))
+    {
+        return Results.NotFound();
+    }
+
+    var contentType = fileName.EndsWith(".png") ? "image/png" :
+                      fileName.EndsWith(".webp") ? "image/webp" :
+                      "application/octet-stream";
+
+    return Results.File(filePath, contentType);
+})
+.WithName("GetCustomSprite")
+.WithTags("Files")
+.Produces(200, contentType: "image/png")
+.Produces(200, contentType: "image/webp")
+.Produces(200, contentType: "application/octet-stream")
+.Produces(400)
+.Produces(404);
+
 // Asegurar que exista la carpeta de almacenamiento y la BD
 using (var scope = app.Services.CreateScope())
 {
