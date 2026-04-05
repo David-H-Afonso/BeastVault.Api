@@ -1,24 +1,41 @@
 namespace BeastVault.Api.Domain.Entities
 {
+    public enum UserRole { Standard = 0, Admin = 1 }
+
+    public class UserEntity
+    {
+        public int Id { get; set; }
+        public required string Username { get; set; }
+        public string? PasswordHash { get; set; }
+        public UserRole Role { get; set; } = UserRole.Standard;
+        public bool IsDefault { get; set; }
+
+        public ICollection<FileEntity> Files { get; set; } = new List<FileEntity>();
+        public ICollection<PokemonEntity> Pokemon { get; set; } = new List<PokemonEntity>();
+        public ICollection<TagEntity> Tags { get; set; } = new List<TagEntity>();
+    }
+
     public class FileEntity
     {
         public int Id { get; set; }
+        public int UserId { get; set; }
         public required string Sha256 { get; set; }
         public required string FileName { get; set; }
-        public string? OriginalFileName { get; set; } // Nombre del archivo original para backup
-        public required string Format { get; set; } // pk1..pk9, etc.
+        public string? OriginalFileName { get; set; }
+        public required string Format { get; set; }
         public long Size { get; set; }
         public required string StoredPath { get; set; }
         public DateTime ImportedAt { get; set; } = DateTime.UtcNow;
-        public byte[]? RawBlob { get; set; } // opcional
+        public byte[]? RawBlob { get; set; }
 
-        // Navigation properties
+        public UserEntity User { get; set; } = null!;
         public ICollection<FileTagEntity> FileTags { get; set; } = new List<FileTagEntity>();
     }
 
     public class PokemonEntity
     {
         public int Id { get; set; }
+        public int UserId { get; set; }
         public int FileId { get; set; }
         public required int SpeciesId { get; set; }
         public string? Nickname { get; set; }
@@ -95,8 +112,8 @@ namespace BeastVault.Api.Domain.Entities
         public int HandlingTrainerMemoryFeeling { get; set; } = 0;
         public int HandlingTrainerMemoryVariable { get; set; } = 0;
 
-        // Navigation properties
         public ICollection<PokemonTagEntity> PokemonTags { get; set; } = new List<PokemonTagEntity>();
+        public UserEntity User { get; set; } = null!;
         public FileEntity File { get; set; } = null!;
     }
 
@@ -151,10 +168,11 @@ namespace BeastVault.Api.Domain.Entities
     public class TagEntity
     {
         public int Id { get; set; }
+        public int UserId { get; set; }
         public required string Name { get; set; }
-        public string? ImagePath { get; set; } // Optional path to PNG image
+        public string? ImagePath { get; set; }
 
-        // Navigation properties
+        public UserEntity User { get; set; } = null!;
         public ICollection<PokemonTagEntity> PokemonTags { get; set; } = new List<PokemonTagEntity>();
         public ICollection<FileTagEntity> FileTags { get; set; } = new List<FileTagEntity>();
     }

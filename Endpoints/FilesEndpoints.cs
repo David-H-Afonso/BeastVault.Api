@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using BeastVault.Api.Infrastructure;
 using BeastVault.Api.Infrastructure.Services;
+using BeastVault.Api.Infrastructure.Helpers;
 
 namespace BeastVault.Api.Endpoints
 {
@@ -8,9 +9,10 @@ namespace BeastVault.Api.Endpoints
     {
         public static IEndpointRouteBuilder MapFilesEndpoints(this IEndpointRouteBuilder app)
         {
-            app.MapGet("/files/{id:int}", async (int id, AppDbContext db, FileStorageService storage) =>
+            app.MapGet("/files/{id:int}", async (int id, HttpContext httpContext, AppDbContext db, FileStorageService storage) =>
             {
-                var f = await db.Files.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
+                var userId = httpContext.GetUserIdOrDefault();
+                var f = await db.Files.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId);
                 if (f == null) return Results.NotFound();
 
                 try
@@ -33,12 +35,14 @@ namespace BeastVault.Api.Endpoints
             .WithSummary("Download a stored file by its internal ID")
             .WithDescription("Returns the original uploaded file using the file ID. Useful for auditing or retrieving individual files.")
             .WithTags("Files")
+            .RequireAuthorization()
             .Produces<byte[]>(200, "application/octet-stream")
             .Produces(404);
 
-            app.MapGet("/export/{pokemonId:int}", async (int pokemonId, AppDbContext db) =>
+            app.MapGet("/export/{pokemonId:int}", async (int pokemonId, HttpContext httpContext, AppDbContext db) =>
             {
-                var poke = await db.Pokemon.AsNoTracking().FirstOrDefaultAsync(x => x.Id == pokemonId);
+                var userId = httpContext.GetUserIdOrDefault();
+                var poke = await db.Pokemon.AsNoTracking().FirstOrDefaultAsync(x => x.Id == pokemonId && x.UserId == userId);
                 if (poke == null) return Results.NotFound();
                 var file = await db.Files.AsNoTracking().FirstOrDefaultAsync(x => x.Id == poke.FileId);
                 if (file == null || file.RawBlob == null || file.RawBlob.Length == 0)
@@ -60,13 +64,15 @@ namespace BeastVault.Api.Endpoints
             .WithSummary("Download the original PKM file of a Pokémon")
             .WithDescription("Returns the original PKM file (.pk9, .pk8, etc.) stored in the database for the specified Pokémon. The file is identical to the one initially uploaded.")
             .WithTags("Files")
+            .RequireAuthorization()
             .Produces<byte[]>(200, "application/octet-stream")
             .Produces(404)
             .Produces(500);
 
-            app.MapGet("/export/database/{pokemonId:int}", async (int pokemonId, AppDbContext db, FileStorageService storage) =>
+            app.MapGet("/export/database/{pokemonId:int}", async (int pokemonId, HttpContext httpContext, AppDbContext db, FileStorageService storage) =>
             {
-                var poke = await db.Pokemon.AsNoTracking().FirstOrDefaultAsync(x => x.Id == pokemonId);
+                var userId = httpContext.GetUserIdOrDefault();
+                var poke = await db.Pokemon.AsNoTracking().FirstOrDefaultAsync(x => x.Id == pokemonId && x.UserId == userId);
                 if (poke == null) return Results.NotFound();
                 var file = await db.Files.AsNoTracking().FirstOrDefaultAsync(x => x.Id == poke.FileId);
                 if (file == null) return Results.NotFound();
@@ -101,15 +107,17 @@ namespace BeastVault.Api.Endpoints
             .WithSummary("Download the PKM file from disk (audit)")
             .WithDescription("Returns the PKM file stored on disk for the specified Pokémon. Useful for comparing the database backup vs. the file on disk.")
             .WithTags("Files")
+            .RequireAuthorization()
             .Produces<byte[]>(200, "application/octet-stream")
             .Produces(404)
             .Produces(500);
             // Download backup file by Pokemon ID
-            app.MapGet("/export/backup/{pokemonId:int}", async (int pokemonId, AppDbContext context, FileStorageService storage) =>
+            app.MapGet("/export/backup/{pokemonId:int}", async (int pokemonId, HttpContext httpContext, AppDbContext context, FileStorageService storage) =>
             {
+                var userId = httpContext.GetUserIdOrDefault();
                 var pokemon = await context.Pokemon
                     .Include(p => p.File)
-                    .FirstOrDefaultAsync(p => p.Id == pokemonId);
+                    .FirstOrDefaultAsync(p => p.Id == pokemonId && p.UserId == userId);
 
                 if (pokemon?.File == null)
                     return Results.NotFound("Pokemon or file not found");
@@ -123,8 +131,7 @@ namespace BeastVault.Api.Endpoints
 
                 try
                 {
-                    // Get backup file path
-                    var backupPath = storage.GetBackupPath(fileName, originalExt, importDate);
+                    var backupPath = storage.GetBackupPath(userId, fileName, originalExt, importDate);
 
                     if (!File.Exists(backupPath))
                         return Results.NotFound("Backup file not found");
@@ -140,6 +147,7 @@ namespace BeastVault.Api.Endpoints
                 }
             })
             .WithName("DownloadBackupFile")
+            .RequireAuthorization()
             .WithTags("Export");
 
             return app;

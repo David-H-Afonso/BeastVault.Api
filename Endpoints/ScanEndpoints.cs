@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using BeastVault.Api.Infrastructure.Services;
+using BeastVault.Api.Infrastructure.Helpers;
 
 namespace BeastVault.Api.Endpoints
 {
@@ -8,6 +9,7 @@ namespace BeastVault.Api.Endpoints
         public static void MapScanEndpoints(this IEndpointRouteBuilder app)
         {
             var group = app.MapGroup("/scan")
+                .RequireAuthorization()
                 .WithTags("File Scanning");
 
             group.MapPost("/directory", ScanDirectory)
@@ -33,11 +35,14 @@ Supported file formats:
         }
 
         private static async Task<IResult> ScanDirectory(
+            HttpContext httpContext,
             [FromServices] FileWatcherService fileWatcher)
         {
+            var userId = httpContext.GetUserIdOrDefault();
+
             try
             {
-                var result = await fileWatcher.ScanAndImportNewFilesAsync();
+                var result = await fileWatcher.ScanAndImportNewFilesAsync(userId);
 
                 return Results.Ok(new
                 {
@@ -69,12 +74,15 @@ Supported file formats:
             }
         }
 
-        private static IResult GetScanStatus()
+        private static IResult GetScanStatus(
+            HttpContext httpContext,
+            [FromServices] FileStorageService storage)
         {
+            var userId = httpContext.GetUserIdOrDefault();
+
             try
             {
-                var documentsPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-                var watchPath = Path.Combine(documentsPath, "BeastVault");
+                var watchPath = storage.GetUserDirectory(userId);
 
                 if (!Directory.Exists(watchPath))
                 {

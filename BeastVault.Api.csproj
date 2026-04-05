@@ -18,6 +18,10 @@
         </PackageReference>
         <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite"
                           Version="9.0.8" />
+        <PackageReference Include="BCrypt.Net-Next"
+                          Version="4.0.3" />
+        <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer"
+                          Version="9.0.8" />
         <PackageReference Include="PKHeX.Core"
                           Version="25.12.21" />
         <PackageReference Include="Swashbuckle.AspNetCore"

@@ -5,6 +5,7 @@ using BeastVault.Api.Infrastructure;
 using BeastVault.Api.Infrastructure.Services;
 using BeastVault.Api.Domain.Services;
 using BeastVault.Api.Domain.ValueObjects;
+using BeastVault.Api.Infrastructure.Helpers;
 
 
 namespace BeastVault.Api.Endpoints
@@ -14,23 +15,24 @@ namespace BeastVault.Api.Endpoints
         public static IEndpointRouteBuilder MapPokemonEndpoints(this IEndpointRouteBuilder app)
         {
             // Admin endpoint to wipe the entire database (dangerous!)
-            app.MapPost("/admin/wipe-database", async (AppDbContext db, FileStorageService storage) =>
+            app.MapPost("/admin/wipe-database", async (HttpContext httpContext, AppDbContext db, FileStorageService storage) =>
             {
-                // Get all files to delete their backups
-                var allFiles = await db.Files.ToListAsync();
+                var userId = httpContext.GetUserIdOrDefault();
 
-                // Remove all data from database
-                db.Pokemon.RemoveRange(db.Pokemon);
-                db.PokemonTags.RemoveRange(db.PokemonTags);
-                db.FileTags.RemoveRange(db.FileTags);
-                db.Stats.RemoveRange(db.Stats);
-                db.Moves.RemoveRange(db.Moves);
-                db.RelearnMoves.RemoveRange(db.RelearnMoves);
-                db.Files.RemoveRange(db.Files);
-                db.Tags.RemoveRange(db.Tags);
+                var allFiles = await db.Files.Where(f => f.UserId == userId).ToListAsync();
+
+                // Remove all user data from database
+                db.Pokemon.RemoveRange(db.Pokemon.Where(p => p.UserId == userId));
+                var userFileIds = allFiles.Select(f => f.Id).ToList();
+                db.PokemonTags.RemoveRange(db.PokemonTags.Where(pt => db.Pokemon.Where(p => p.UserId == userId).Select(p => p.Id).Contains(pt.PokemonId)));
+                db.FileTags.RemoveRange(db.FileTags.Where(ft => userFileIds.Contains(ft.FileId)));
+                db.Stats.RemoveRange(db.Stats.Where(s => db.Pokemon.Where(p => p.UserId == userId).Select(p => p.Id).Contains(s.PokemonId)));
+                db.Moves.RemoveRange(db.Moves.Where(m => db.Pokemon.Where(p => p.UserId == userId).Select(p => p.Id).Contains(m.PokemonId)));
+                db.RelearnMoves.RemoveRange(db.RelearnMoves.Where(r => db.Pokemon.Where(p => p.UserId == userId).Select(p => p.Id).Contains(r.PokemonId)));
+                db.Files.RemoveRange(allFiles);
+                db.Tags.RemoveRange(db.Tags.Where(t => t.UserId == userId));
                 await db.SaveChangesAsync();
 
-                // Delete all backup files
                 int deletedBackups = 0;
                 foreach (var file in allFiles)
                 {
@@ -39,27 +41,26 @@ namespace BeastVault.Api.Endpoints
                         try
                         {
                             var ext = Path.GetExtension(file.OriginalFileName);
-                            storage.DeleteBackup(file.OriginalFileName, ext);
+                            storage.DeleteBackup(userId, file.OriginalFileName, ext);
                             deletedBackups++;
                         }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"Could not delete backup for {file.OriginalFileName}: {ex.Message}");
-                        }
+                        catch { }
                     }
                 }
 
                 return Results.Ok(new { Message = "Database wiped.", DeletedBackups = deletedBackups });
             })
+            .RequireAuthorization("AdminOnly")
             .WithName("WipeDatabase")
             .WithSummary("⚠️ ADMIN: Delete entire database")
             .WithDescription("DANGEROUS: Removes all Pokémon, files and data from the database. For development/testing only.")
             .WithTags("Admin")
             .Produces<string>(200);
             // Eliminar de la base de datos y archivo principal (conserva backup)
-            app.MapDelete("/pokemon/{pokemonId:int}/database", async (int pokemonId, AppDbContext db, FileStorageService storage) =>
+            app.MapDelete("/pokemon/{pokemonId:int}/database", async (int pokemonId, HttpContext httpContext, AppDbContext db, FileStorageService storage) =>
             {
-                var poke = await db.Pokemon.FirstOrDefaultAsync(x => x.Id == pokemonId);
+                var userId = httpContext.GetUserIdOrDefault();
+                var poke = await db.Pokemon.FirstOrDefaultAsync(x => x.Id == pokemonId && x.UserId == userId);
                 if (poke == null) return Results.NotFound();
 
                 // Obtener el archivo asociado antes de eliminar
@@ -88,24 +89,16 @@ namespace BeastVault.Api.Endpoints
                     {
                         storage.Delete(file.StoredPath);
                         fileDeleted = true;
-                        Console.WriteLine($"Main file deleted successfully: {file.StoredPath} (backup preserved)");
                     }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"Could not delete main file {file.StoredPath}: {ex.Message}");
-                        Console.WriteLine($"Exception details: {ex}");
-                    }
+                    catch { }
 
                     db.Files.Remove(file);
-                }
-                else
-                {
-                    Console.WriteLine("No file record found for this Pokemon");
                 }
 
                 await db.SaveChangesAsync();
                 return Results.Ok(new { Deleted = true, FileDeleted = fileDeleted, BackupPreserved = true });
             })
+            .RequireAuthorization()
             .WithName("DeletePokemonFromDatabase")
             .WithSummary("Delete a Pokémon and its main file (preserves backup)")
             .WithDescription("Removes the Pokémon, all its related data from the database, and deletes the main file on disk. Backup file is preserved.")
@@ -114,9 +107,10 @@ namespace BeastVault.Api.Endpoints
             .Produces(404);
 
             // Eliminar de base de datos y backup/disco
-            app.MapDelete("/pokemon/{pokemonId:int}/backup", async (int pokemonId, AppDbContext db, FileStorageService storage) =>
+            app.MapDelete("/pokemon/{pokemonId:int}/backup", async (int pokemonId, HttpContext httpContext, AppDbContext db, FileStorageService storage) =>
             {
-                var poke = await db.Pokemon.FirstOrDefaultAsync(x => x.Id == pokemonId);
+                var userId = httpContext.GetUserIdOrDefault();
+                var poke = await db.Pokemon.FirstOrDefaultAsync(x => x.Id == pokemonId && x.UserId == userId);
                 if (poke == null) return Results.NotFound();
 
                 // Obtener el archivo asociado antes de eliminar
@@ -146,13 +140,8 @@ namespace BeastVault.Api.Endpoints
                     {
                         storage.Delete(file.StoredPath);
                         fileDeleted = true;
-                        Console.WriteLine($"Physical file deleted successfully: {file.StoredPath}");
                     }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"Could not delete physical file {file.StoredPath}: {ex.Message}");
-                        Console.WriteLine($"Exception details: {ex}");
-                    }
+                    catch { }
 
                     // Eliminar backup si existe
                     if (!string.IsNullOrEmpty(file.OriginalFileName))
@@ -160,26 +149,19 @@ namespace BeastVault.Api.Endpoints
                         try
                         {
                             var ext = Path.GetExtension(file.OriginalFileName);
-                            storage.DeleteBackup(file.OriginalFileName, ext);
+                            storage.DeleteBackup(userId, file.OriginalFileName, ext);
                             backupDeleted = true;
-                            Console.WriteLine($"Backup file deleted successfully: {file.OriginalFileName}");
                         }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"Could not delete backup file {file.OriginalFileName}: {ex.Message}");
-                        }
+                        catch { }
                     }
 
                     db.Files.Remove(file);
-                }
-                else
-                {
-                    Console.WriteLine("No file record found for this Pokemon");
                 }
 
                 await db.SaveChangesAsync();
                 return Results.Ok(new { Deleted = true, FileDeleted = fileDeleted, BackupDeleted = backupDeleted, FileName = file?.FileName });
             })
+            .RequireAuthorization()
             .WithName("DeletePokemonAndBackup")
             .WithSummary("Delete a Pokémon completely (database + file)")
             .WithDescription("Removes the Pokémon, all its related data and the original file from disk. Irreversible operation.")
@@ -190,9 +172,10 @@ namespace BeastVault.Api.Endpoints
             // ...resto de endpoints (get, patch, etc.)...
 
             // Main Pokemon query endpoint with advanced filtering, sorting and pagination
-            app.MapGet("/pokemon", async (AppDbContext db, [AsParameters] AdvancedPokemonQuery q) =>
+            app.MapGet("/pokemon", async (HttpContext httpContext, AppDbContext db, [AsParameters] AdvancedPokemonQuery q) =>
             {
-                var baseQuery = db.Pokemon.AsNoTracking().AsQueryable();
+                var userId = httpContext.GetUserIdOrDefault();
+                var baseQuery = db.Pokemon.AsNoTracking().Where(p => p.UserId == userId).AsQueryable();
 
                 // Apply advanced filtering and sorting
                 var query = PokemonQueryService.BuildQuery(baseQuery, q);
@@ -322,9 +305,8 @@ namespace BeastVault.Api.Endpoints
             .WithSummary("Get Pokemon with advanced filtering, sorting and pagination")
             .WithDescription("Main endpoint with comprehensive filtering by types, generations, stats, and flexible sorting options.")
             .WithTags("Pokemon")
+            .RequireAuthorization()
             .Produces<object>(200);
-
-            // Metadata endpoint for frontend helpers
             app.MapGet("/pokemon/metadata", () =>
             {
                 var types = new[]
@@ -406,9 +388,10 @@ namespace BeastVault.Api.Endpoints
             .WithTags("Pokemon", "Metadata")
             .Produces<object>(200);
 
-            app.MapGet("/pokemon/{id:int}", async (int id, AppDbContext db) =>
+            app.MapGet("/pokemon/{id:int}", async (int id, HttpContext httpContext, AppDbContext db) =>
             {
-                var p = await db.Pokemon.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
+                var userId = httpContext.GetUserIdOrDefault();
+                var p = await db.Pokemon.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId);
                 if (p == null) return Results.NotFound();
                 var stats = await db.Stats.AsNoTracking().FirstOrDefaultAsync(x => x.PokemonId == p.Id);
                 var moves = await db.Moves.AsNoTracking().Where(x => x.PokemonId == p.Id).OrderBy(x => x.Slot).ToListAsync();
@@ -419,12 +402,14 @@ namespace BeastVault.Api.Endpoints
             .WithSummary("Get complete details of a Pokémon")
             .WithDescription("Returns all data of a specific Pokémon including stats, moves and relearn moves.")
             .WithTags("Pokemon")
+            .RequireAuthorization()
             .Produces<PokemonDetailDto>(200)
             .Produces(404);
 
-            app.MapGet("/pokemon/{id:int}/showdown", async (int id, AppDbContext db) =>
+            app.MapGet("/pokemon/{id:int}/showdown", async (int id, HttpContext httpContext, AppDbContext db) =>
             {
-                var p = await db.Pokemon.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
+                var userId = httpContext.GetUserIdOrDefault();
+                var p = await db.Pokemon.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId);
                 if (p == null) return Results.NotFound();
                 var stats = await db.Stats.AsNoTracking().FirstOrDefaultAsync(x => x.PokemonId == p.Id);
                 var moves = await db.Moves.AsNoTracking().Where(x => x.PokemonId == p.Id).OrderBy(x => x.Slot).ToListAsync();
@@ -435,12 +420,14 @@ namespace BeastVault.Api.Endpoints
             .WithSummary("Export a Pokémon in Pokémon Showdown format")
             .WithDescription("Generates a Pokémon Showdown set with all the Pokémon data (moves, stats, item, etc.).")
             .WithTags("Pokemon")
+            .RequireAuthorization()
             .Produces<string>(200, "text/plain")
             .Produces(404);
 
-            app.MapPatch("/pokemon/{id:int}", async (int id, UpdatePokemonDto dto, AppDbContext db) =>
+            app.MapPatch("/pokemon/{id:int}", async (int id, UpdatePokemonDto dto, HttpContext httpContext, AppDbContext db) =>
             {
-                var p = await db.Pokemon.FirstOrDefaultAsync(x => x.Id == id);
+                var userId = httpContext.GetUserIdOrDefault();
+                var p = await db.Pokemon.FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId);
                 if (p == null) return Results.NotFound();
                 if (dto.Favorite.HasValue) p.Favorite = dto.Favorite.Value;
                 if (dto.Notes is not null) p.Notes = dto.Notes;
@@ -451,15 +438,17 @@ namespace BeastVault.Api.Endpoints
             .WithSummary("Update Pokémon properties")
             .WithDescription("Allows updating editable fields like favorite and notes. Only provided fields in the DTO are updated.")
             .WithTags("Pokemon")
+            .RequireAuthorization()
             .Accepts<UpdatePokemonDto>("application/json")
             .Produces(204)
             .Produces(404);
 
             // Compare two Pokemon to see differences (useful for debugging trades)
-            app.MapGet("/pokemon/compare/{id1:int}/{id2:int}", async (int id1, int id2, AppDbContext db) =>
+            app.MapGet("/pokemon/compare/{id1:int}/{id2:int}", async (int id1, int id2, HttpContext httpContext, AppDbContext db) =>
             {
-                var p1 = await db.Pokemon.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id1);
-                var p2 = await db.Pokemon.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id2);
+                var userId = httpContext.GetUserIdOrDefault();
+                var p1 = await db.Pokemon.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id1 && x.UserId == userId);
+                var p2 = await db.Pokemon.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id2 && x.UserId == userId);
 
                 if (p1 == null || p2 == null)
                     return Results.NotFound("One or both Pokemon not found");
@@ -479,13 +468,16 @@ namespace BeastVault.Api.Endpoints
             .WithSummary("Compare two Pokémon and show differences")
             .WithDescription("Analyzes and compares all fields of two different Pokémon. Useful for detecting changes after trades or edits.")
             .WithTags("Pokemon", "Comparison")
+            .RequireAuthorization()
             .Produces<object>(200)
             .Produces(404);
 
             // Debug endpoint to check OriginGame values
-            app.MapGet("/debug/origin-games", async (AppDbContext db) =>
+            app.MapGet("/debug/origin-games", async (HttpContext httpContext, AppDbContext db) =>
             {
+                var userId = httpContext.GetUserIdOrDefault();
                 var uniqueOriginGames = await db.Pokemon
+                    .Where(p => p.UserId == userId)
                     .Select(p => new { p.OriginGame, p.SpeciesId })
                     .Distinct()
                     .OrderBy(x => x.OriginGame)

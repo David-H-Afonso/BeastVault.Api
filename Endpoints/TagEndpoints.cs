@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using BeastVault.Api.Contracts;
 using BeastVault.Api.Infrastructure;
 using BeastVault.Api.Domain.Entities;
+using BeastVault.Api.Infrastructure.Helpers;
 
 namespace BeastVault.Api.Endpoints
 {
@@ -10,9 +11,11 @@ namespace BeastVault.Api.Endpoints
         public static IEndpointRouteBuilder MapTagEndpoints(this IEndpointRouteBuilder app)
         {
             // Get all tags
-            app.MapGet("/tags", async (AppDbContext db) =>
+            app.MapGet("/tags", async (HttpContext httpContext, AppDbContext db) =>
             {
+                var userId = httpContext.GetUserIdOrDefault();
                 var tags = await db.Tags
+                    .Where(t => t.UserId == userId)
                     .OrderBy(t => t.Name)
                     .Select(t => new TagDto
                     {
@@ -24,12 +27,13 @@ namespace BeastVault.Api.Endpoints
                     .ToListAsync();
 
                 return Results.Ok(tags);
-            }).WithTags("Tags");
+            }).RequireAuthorization().WithTags("Tags");
 
             // Get a specific tag by ID
-            app.MapGet("/tags/{id:int}", async (int id, AppDbContext db) =>
+            app.MapGet("/tags/{id:int}", async (int id, HttpContext httpContext, AppDbContext db) =>
             {
-                var tag = await db.Tags.FindAsync(id);
+                var userId = httpContext.GetUserIdOrDefault();
+                var tag = await db.Tags.FirstOrDefaultAsync(t => t.Id == id && t.UserId == userId);
                 if (tag == null)
                     return Results.NotFound();
 
@@ -42,21 +46,23 @@ namespace BeastVault.Api.Endpoints
                     ImagePath = tag.ImagePath,
                     PokemonCount = pokemonCount
                 });
-            }).WithTags("Tags");
+            }).RequireAuthorization().WithTags("Tags");
 
             // Create a new tag
-            app.MapPost("/tags", async (CreateTagRequest request, AppDbContext db) =>
+            app.MapPost("/tags", async (CreateTagRequest request, HttpContext httpContext, AppDbContext db) =>
             {
-                // Check if tag with same name already exists (case-sensitive)
+                var userId = httpContext.GetUserIdOrDefault();
+
                 var existingTag = await db.Tags
-                    .FirstOrDefaultAsync(t => t.Name == request.Name);
+                    .FirstOrDefaultAsync(t => t.UserId == userId && t.Name == request.Name);
 
                 if (existingTag != null)
                     return Results.Conflict($"Tag with name '{request.Name}' already exists");
 
                 var tag = new TagEntity
                 {
-                    Name = request.Name
+                    Name = request.Name,
+                    UserId = userId
                 };
 
                 db.Tags.Add(tag);
@@ -67,20 +73,21 @@ namespace BeastVault.Api.Endpoints
                     Id = tag.Id,
                     Name = tag.Name,
                     ImagePath = tag.ImagePath,
-                    PokemonCount = 0 // New tag has no Pokemon assigned yet
+                    PokemonCount = 0
                 });
-            }).WithTags("Tags");
+            }).RequireAuthorization().WithTags("Tags");
 
             // Update an existing tag
-            app.MapPut("/tags/{id:int}", async (int id, UpdateTagRequest request, AppDbContext db) =>
+            app.MapPut("/tags/{id:int}", async (int id, UpdateTagRequest request, HttpContext httpContext, AppDbContext db) =>
             {
-                var tag = await db.Tags.FindAsync(id);
+                var userId = httpContext.GetUserIdOrDefault();
+                var tag = await db.Tags.FirstOrDefaultAsync(t => t.Id == id && t.UserId == userId);
                 if (tag == null)
                     return Results.NotFound();
 
-                // Check if another tag with the same name already exists (case-sensitive)
+                // Check if another tag with the same name already exists for this user
                 var existingTag = await db.Tags
-                    .FirstOrDefaultAsync(t => t.Name == request.Name && t.Id != id);
+                    .FirstOrDefaultAsync(t => t.UserId == userId && t.Name == request.Name && t.Id != id);
 
                 if (existingTag != null)
                     return Results.Conflict($"Tag with name '{request.Name}' already exists");
@@ -97,12 +104,13 @@ namespace BeastVault.Api.Endpoints
                     ImagePath = tag.ImagePath,
                     PokemonCount = pokemonCount
                 });
-            }).WithTags("Tags");
+            }).RequireAuthorization().WithTags("Tags");
 
             // Delete a tag
-            app.MapDelete("/tags/{id:int}", async (int id, AppDbContext db) =>
+            app.MapDelete("/tags/{id:int}", async (int id, HttpContext httpContext, AppDbContext db) =>
             {
-                var tag = await db.Tags.FindAsync(id);
+                var userId = httpContext.GetUserIdOrDefault();
+                var tag = await db.Tags.FirstOrDefaultAsync(t => t.Id == id && t.UserId == userId);
                 if (tag == null)
                     return Results.NotFound();
 
@@ -131,12 +139,13 @@ namespace BeastVault.Api.Endpoints
                 await db.SaveChangesAsync();
 
                 return Results.NoContent();
-            }).WithTags("Tags");
+            }).RequireAuthorization().WithTags("Tags");
 
             // Upload tag image
-            app.MapPost("/tags/{id:int}/image", async (int id, IFormFile file, AppDbContext db) =>
+            app.MapPost("/tags/{id:int}/image", async (int id, IFormFile file, HttpContext httpContext, AppDbContext db) =>
             {
-                var tag = await db.Tags.FindAsync(id);
+                var userId = httpContext.GetUserIdOrDefault();
+                var tag = await db.Tags.FirstOrDefaultAsync(t => t.Id == id && t.UserId == userId);
                 if (tag == null)
                     return Results.NotFound();
 
@@ -183,12 +192,13 @@ namespace BeastVault.Api.Endpoints
                     ImagePath = tag.ImagePath,
                     PokemonCount = pokemonCount
                 });
-            }).WithTags("Tags");
+            }).RequireAuthorization().WithTags("Tags");
 
             // Delete tag image
-            app.MapDelete("/tags/{id:int}/image", async (int id, AppDbContext db) =>
+            app.MapDelete("/tags/{id:int}/image", async (int id, HttpContext httpContext, AppDbContext db) =>
             {
-                var tag = await db.Tags.FindAsync(id);
+                var userId = httpContext.GetUserIdOrDefault();
+                var tag = await db.Tags.FirstOrDefaultAsync(t => t.Id == id && t.UserId == userId);
                 if (tag == null)
                     return Results.NotFound();
 
@@ -221,12 +231,13 @@ namespace BeastVault.Api.Endpoints
                     ImagePath = tag.ImagePath,
                     PokemonCount = pokemonCount
                 });
-            }).WithTags("Tags");
+            }).RequireAuthorization().WithTags("Tags");
 
             // Get tags assigned to a Pokémon
-            app.MapGet("/pokemon/{id:int}/tags", async (int id, AppDbContext db) =>
+            app.MapGet("/pokemon/{id:int}/tags", async (int id, HttpContext httpContext, AppDbContext db) =>
             {
-                var pokemon = await db.Pokemon.FindAsync(id);
+                var userId = httpContext.GetUserIdOrDefault();
+                var pokemon = await db.Pokemon.FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId);
                 if (pokemon == null)
                     return Results.NotFound();
 
@@ -244,15 +255,15 @@ namespace BeastVault.Api.Endpoints
                     .ToListAsync();
 
                 return Results.Ok(tags);
-            }).WithTags("Tags");
+            }).RequireAuthorization().WithTags("Tags");
 
             // Assign tags to a Pokémon (replaces all existing tags)
-            // Also applies to all Pokemon from files with the same SHA256 (handles duplicates)
-            app.MapPut("/pokemon/{id:int}/tags", async (int id, PokemonTagsRequest request, AppDbContext db) =>
+            app.MapPut("/pokemon/{id:int}/tags", async (int id, PokemonTagsRequest request, HttpContext httpContext, AppDbContext db) =>
             {
+                var userId = httpContext.GetUserIdOrDefault();
                 var pokemon = await db.Pokemon
                     .Include(p => p.File)
-                    .FirstOrDefaultAsync(p => p.Id == id);
+                    .FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId);
 
                 if (pokemon == null)
                     return Results.NotFound();
@@ -267,8 +278,9 @@ namespace BeastVault.Api.Endpoints
                 if (invalidTagIds.Any())
                     return Results.BadRequest($"Invalid tag IDs: {string.Join(", ", invalidTagIds)}");
 
-                // Find all Pokemon from files with the same SHA256 (handles duplicates)
+                // Find all Pokemon from files with the same SHA256 for this user
                 var relatedPokemonIds = await db.Pokemon
+                    .Where(p => p.UserId == userId)
                     .Join(db.Files, p => p.FileId, f => f.Id, (p, f) => new { Pokemon = p, File = f })
                     .Where(pf => pf.File.Sha256 == pokemon.File.Sha256)
                     .Select(pf => pf.Pokemon.Id)
@@ -313,20 +325,22 @@ namespace BeastVault.Api.Endpoints
                     .ToListAsync();
 
                 return Results.Ok(updatedTags);
-            }).WithTags("Tags");
+            }).RequireAuthorization().WithTags("Tags");
 
-            // Remove all tags from a Pokémon (and all Pokemon from files with same SHA256)
-            app.MapDelete("/pokemon/{id:int}/tags", async (int id, AppDbContext db) =>
+            // Remove all tags from a Pokémon
+            app.MapDelete("/pokemon/{id:int}/tags", async (int id, HttpContext httpContext, AppDbContext db) =>
             {
+                var userId = httpContext.GetUserIdOrDefault();
                 var pokemon = await db.Pokemon
                     .Include(p => p.File)
-                    .FirstOrDefaultAsync(p => p.Id == id);
+                    .FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId);
 
                 if (pokemon == null)
                     return Results.NotFound();
 
-                // Find all Pokemon from files with the same SHA256 (handles duplicates)
+                // Find all Pokemon from files with the same SHA256 for this user
                 var relatedPokemonIds = await db.Pokemon
+                    .Where(p => p.UserId == userId)
                     .Join(db.Files, p => p.FileId, f => f.Id, (p, f) => new { Pokemon = p, File = f })
                     .Where(pf => pf.File.Sha256 == pokemon.File.Sha256)
                     .Select(pf => pf.Pokemon.Id)
@@ -340,7 +354,7 @@ namespace BeastVault.Api.Endpoints
                 await db.SaveChangesAsync();
 
                 return Results.NoContent();
-            }).WithTags("Tags");
+            }).RequireAuthorization().WithTags("Tags");
 
             return app;
         }

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using BeastVault.Api.Infrastructure;
 using BeastVault.Api.Infrastructure.Services;
+using BeastVault.Api.Infrastructure.Helpers;
 
 namespace BeastVault.Api.Endpoints
 {
@@ -14,8 +15,10 @@ namespace BeastVault.Api.Endpoints
         {
             app.MapPost("/import",
                 [Consumes("multipart/form-data")]
-            async ([FromForm] IFormFileCollection files, AppDbContext db, FileStorageService storage, PkhexCoreParser parser) =>
+            async (HttpContext httpContext, [FromForm] IFormFileCollection files, AppDbContext db, FileStorageService storage, PkhexCoreParser parser) =>
             {
+                var userId = httpContext.GetUserIdOrDefault();
+
                 if (files == null || files.Count == 0)
                     return Results.BadRequest("No files provided.");
 
@@ -29,39 +32,34 @@ namespace BeastVault.Api.Endpoints
                     await f.CopyToAsync(ms);
                     var bytes = ms.ToArray();
 
-                    // Log to verify we save the original bytes
-                    Console.WriteLine($"Original file: {f.FileName}, Size: {bytes.Length} bytes, SHA256: {FileStorageService.ComputeSha256(bytes)}");
-
-                    var parse = await parser.ParseAsync(bytes, f.FileName, storage);
+                    var parse = await parser.ParseAsync(bytes, f.FileName, storage, userId);
                     if (parse is null)
                     {
                         imported.Add(new { FileName = f.FileName, Status = "error", Message = "Could not parse file" });
                         continue;
                     }
 
-                    // Dedupe by hash
-                    var existingFile = await db.Files.FirstOrDefaultAsync(x => x.Sha256 == parse.File.Sha256);
+                    // Dedupe by hash per user
+                    var existingFile = await db.Files.FirstOrDefaultAsync(x => x.UserId == userId && x.Sha256 == parse.File.Sha256);
                     if (existingFile != null)
                     {
                         imported.Add(new { FileName = f.FileName, Status = "duplicate", PokemonId = existingFile.Id });
                         continue;
                     }
 
-
-                    // File already parsed and saved by ParseAsync
                     if (string.IsNullOrEmpty(parse.File.StoredPath))
                     {
                         imported.Add(new { FileName = f.FileName, Status = "error", Message = "Failed to save file to storage" });
                         continue;
                     }
 
-                    // Save backup in database
+                    parse.File.UserId = userId;
                     parse.File.RawBlob = bytes;
 
-                    // Persistence
                     db.Files.Add(parse.File);
                     await db.SaveChangesAsync();
 
+                    parse.Pokemon.UserId = userId;
                     parse.Pokemon.FileId = parse.File.Id;
                     db.Pokemon.Add(parse.Pokemon);
                     await db.SaveChangesAsync();
@@ -107,6 +105,7 @@ namespace BeastVault.Api.Endpoints
             .WithSummary("Import PKM files (.pk9, .pb9, .pa9, .pa8, .pk8, etc.)")
             .WithDescription("Import one or multiple Pokémon files in PKM format. Supports all formats (.pk1 to .pk9, .pb7/.pb8/.pb9, .pa8/.pa9). Files are stored both on disk and in database to preserve the original.")
             .WithTags("Import")
+            .RequireAuthorization()
             .Accepts<IFormFileCollection>("multipart/form-data")
             .Produces<List<object>>(200)
             .Produces(400)

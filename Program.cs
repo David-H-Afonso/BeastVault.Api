@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 using BeastVault.Api.Infrastructure;
 using BeastVault.Api.Endpoints;
 using BeastVault.Api.Extensions;
@@ -6,32 +9,64 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using BeastVault.Api.Infrastructure.Services;
 using BeastVault.Api.Infrastructure.Configuration;
+using BeastVault.Api.Infrastructure.Middleware;
 using static BeastVault.Api.Endpoints.ConfigurationEndpoints;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Override JWT secret from environment variable if present
+var envJwtSecret = Environment.GetEnvironmentVariable("JWT_SECRET_KEY");
+if (!string.IsNullOrEmpty(envJwtSecret))
+    builder.Configuration["JwtSettings:SecretKey"] = envJwtSecret;
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Registrar servicio de configuración de almacenamiento
 builder.Services.AddSingleton<StorageConfiguration>();
 
-// Add CORS
+// JWT Authentication
+var jwtSettings = builder.Configuration
+    .GetSection(JwtSettings.SectionName)
+    .Get<JwtSettings>() ?? new JwtSettings();
+
+builder.Services.Configure<JwtSettings>(
+    builder.Configuration.GetSection(JwtSettings.SectionName));
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwtSettings.Issuer,
+            ValidAudience = jwtSettings.Audience,
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(jwtSettings.SecretKey)),
+            ClockSkew = TimeSpan.FromMinutes(1)
+        };
+    });
+
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
+});
+
+// CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowLocalhost", policy =>
     {
-        // Para Electron, desarrollo local y CasaOS
         policy.SetIsOriginAllowed(origin =>
         {
             if (string.IsNullOrEmpty(origin)) return false;
             var uri = new Uri(origin);
 
-            // Permitir localhost y 127.0.0.1 (desarrollo y Electron)
             if (uri.Host == "localhost" || uri.Host == "127.0.0.1")
                 return true;
 
-            // Permitir redes locales (CasaOS y desarrollo)
             if (uri.Host.StartsWith("192.168.") ||
                 uri.Host.StartsWith("10.") ||
                 uri.Host.StartsWith("172."))
@@ -55,13 +90,15 @@ var app = builder.Build();
 app.UseSwagger();
 app.UseSwaggerUI();
 
-// Use CORS before other middleware
 app.UseCors("AllowLocalhost");
-
 app.UseHttpsRedirection();
 
+app.UseAuthentication();
+app.UseAuthorization();
+app.UseUserContext();
 
 app.MapHealthChecks();
+app.MapUserEndpoints();
 app.MapImportEndpoints();
 app.MapPokemonEndpoints();
 app.MapTagEndpoints();
@@ -80,23 +117,23 @@ app.MapGet("/custom-sprites/search/{pattern}", (string pattern) =>
         Path.Combine(AppContext.BaseDirectory, "assets"),
         Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets")
     };
-    
+
     // Check environment variable for custom assets path
     var envAssetsPath = Environment.GetEnvironmentVariable("BEASTVAULT_ASSETS_PATH");
     if (!string.IsNullOrEmpty(envAssetsPath))
     {
         possiblePaths.Insert(0, envAssetsPath);
     }
-    
+
     // For Electron: try parent directory (resources/backend/assets)
     var parentDir = Directory.GetParent(AppContext.BaseDirectory)?.FullName;
     if (parentDir != null)
     {
         possiblePaths.Add(Path.Combine(parentDir, "assets"));
     }
-    
+
     possiblePaths = possiblePaths.Distinct().ToList();
-    
+
     string? assetsPath = null;
     foreach (var path in possiblePaths)
     {
@@ -106,7 +143,7 @@ app.MapGet("/custom-sprites/search/{pattern}", (string pattern) =>
             break;
         }
     }
-    
+
     if (assetsPath == null)
     {
         return Results.NotFound();
@@ -116,7 +153,7 @@ app.MapGet("/custom-sprites/search/{pattern}", (string pattern) =>
     {
         var cleanPattern = Path.GetFileName(pattern); // Security: remove path traversal
         var matchingFiles = Directory.GetFiles(assetsPath, cleanPattern + "*");
-        
+
         if (matchingFiles.Length > 0)
         {
             // Return just the filename
@@ -146,23 +183,23 @@ app.MapGet("/custom-sprites/{fileName}", (string fileName) =>
         Path.Combine(AppContext.BaseDirectory, "assets"),
         Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets")
     };
-    
+
     // Check environment variable for custom assets path
     var envAssetsPath = Environment.GetEnvironmentVariable("BEASTVAULT_ASSETS_PATH");
     if (!string.IsNullOrEmpty(envAssetsPath))
     {
         possiblePaths.Insert(0, envAssetsPath);
     }
-    
+
     // For Electron: try parent directory (resources/backend/assets)
     var parentDir = Directory.GetParent(AppContext.BaseDirectory)?.FullName;
     if (parentDir != null)
     {
         possiblePaths.Add(Path.Combine(parentDir, "assets"));
     }
-    
+
     possiblePaths = possiblePaths.Distinct().ToList();
-    
+
     string? assetsPath = null;
     foreach (var path in possiblePaths)
     {
@@ -172,7 +209,7 @@ app.MapGet("/custom-sprites/{fileName}", (string fileName) =>
             break;
         }
     }
-    
+
     // Si la carpeta no existe en ninguna ubicación, retornar 404
     if (assetsPath == null)
     {
@@ -183,12 +220,12 @@ app.MapGet("/custom-sprites/{fileName}", (string fileName) =>
         }
         return Results.NotFound();
     }
-    
+
     Console.WriteLine($"📂 Using assets path: {assetsPath}");
-    
+
     // Primero intentar encontrar el archivo exacto
     var filePath = Path.GetFullPath(Path.Combine(assetsPath, fileName));
-    
+
     // Validate that the resolved path is still within the assets directory
     if (!filePath.StartsWith(Path.GetFullPath(assetsPath) + Path.DirectorySeparatorChar) &&
         !filePath.Equals(Path.GetFullPath(assetsPath)))
@@ -213,24 +250,24 @@ app.MapGet("/custom-sprites/{fileName}", (string fileName) =>
     {
         var fileNameWithoutExtension = Path.GetFileNameWithoutExtension(fileName);
         var extension = Path.GetExtension(fileName);
-        
+
         Console.WriteLine($"🔍 Searching for pattern: {fileNameWithoutExtension}*{extension}");
-        
+
         // Buscar archivos que comiencen con el mismo nombre (ignorando timestamps)
         var matchingFiles = Directory.GetFiles(assetsPath, fileNameWithoutExtension + "*" + extension);
-        
+
         Console.WriteLine($"📁 Found {matchingFiles.Length} matching files");
-        
+
         if (matchingFiles.Length > 0)
         {
             // Usar el primer archivo coincidente (idealmente el más reciente)
             var matchedFile = matchingFiles[0];
             Console.WriteLine($"✅ Using matched file: {matchedFile}");
-            
+
             var contentType = fileName.EndsWith(".png") ? "image/png" :
                               fileName.EndsWith(".webp") ? "image/webp" :
                               "application/octet-stream";
-            
+
             return Results.File(matchedFile, contentType);
         }
     }
@@ -250,33 +287,59 @@ app.MapGet("/custom-sprites/{fileName}", (string fileName) =>
 .Produces(400)
 .Produces(404);
 
-// Asegurar que exista la carpeta de almacenamiento y la BD
+// Initialize database, storage and run startup scan
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-    // Asegurar que la base de datos esté creada con el esquema actual
     try
     {
-        // Usar migraciones en lugar de EnsureCreated para aplicar cambios de esquema
         await db.Database.MigrateAsync();
-        Console.WriteLine("✅ Base de datos migrada correctamente.");
+        Console.WriteLine("Database migrated successfully.");
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"❌ Error al migrar la base de datos: {ex.Message}");
-        Console.WriteLine($"❌ Stack trace: {ex.StackTrace}");
+        Console.WriteLine($"Error migrating database: {ex.Message}");
+
+        // EnsureCreated fallback only for fresh installs where no DB file exists yet
+        var created = await db.Database.EnsureCreatedAsync();
+        if (created)
+            Console.WriteLine("Fresh database created via EnsureCreated.");
+        else
+            Console.WriteLine("WARNING: Existing database could not be migrated. Schema may be outdated.");
     }
 
-    var storage = scope.ServiceProvider.GetRequiredService<BeastVault.Api.Infrastructure.Services.FileStorageService>();
+    // Ensure default admin user exists (handles both migration and fresh install)
+    if (!await db.Users.AnyAsync())
+    {
+        db.Users.Add(new BeastVault.Api.Domain.Entities.UserEntity
+        {
+            Username = "Admin",
+            PasswordHash = null,
+            Role = BeastVault.Api.Domain.Entities.UserRole.Admin,
+            IsDefault = true
+        });
+        await db.SaveChangesAsync();
+        Console.WriteLine("Default Admin user created.");
+    }
+
+    var storageConfig = scope.ServiceProvider.GetRequiredService<StorageConfiguration>();
+    var storage = scope.ServiceProvider.GetRequiredService<FileStorageService>();
+
+    // Migrate existing root-level files to user 1 directory (one-time migration)
+    await BeastVault.Api.Infrastructure.Services.FileMigrationService
+        .MigrateRootFilesToUserDirectoryAsync(db, storageConfig);
+
     storage.EnsureVault();
 
-    // Automatically scan for new files on startup
-    var fileWatcher = scope.ServiceProvider.GetRequiredService<BeastVault.Api.Infrastructure.Services.FileWatcherService>();
-    var scanResult = await fileWatcher.ScanAndImportNewFilesAsync();
-    if (scanResult.NewlyImported.Any())
+    // Scan all user directories for new files on startup
+    var fileWatcher = scope.ServiceProvider.GetRequiredService<FileWatcherService>();
+    var users = await db.Users.Select(u => u.Id).ToListAsync();
+    foreach (var userId in users)
     {
-        Console.WriteLine($"Startup scan: Imported {scanResult.NewlyImported.Count} new Pokemon files");
+        var scanResult = await fileWatcher.ScanAndImportNewFilesAsync(userId);
+        if (scanResult.NewlyImported.Any())
+            Console.WriteLine($"Startup scan (user {userId}): Imported {scanResult.NewlyImported.Count} new Pokemon files");
     }
 }
 
@@ -316,8 +379,9 @@ namespace BeastVault.Api.Extensions
                 return new FileStorageService(storageConfig);
             });
 
-            services.AddScoped<BeastVault.Api.Infrastructure.Services.PkhexCoreParser>();
-            services.AddScoped<BeastVault.Api.Infrastructure.Services.FileWatcherService>();
+            services.AddScoped<AuthService>();
+            services.AddScoped<PkhexCoreParser>();
+            services.AddScoped<FileWatcherService>();
             return services;
         }
     }

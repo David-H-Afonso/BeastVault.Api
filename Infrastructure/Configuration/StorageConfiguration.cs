@@ -12,13 +12,11 @@ namespace BeastVault.Api.Infrastructure.Configuration
     {
         private readonly IConfiguration _configuration;
 
-        // Rutas configuradas
         public string DatabaseDirectory { get; private set; } = string.Empty;
         public string DatabasePath { get; private set; } = string.Empty;
         public string PokemonFilesDirectory { get; private set; } = string.Empty;
         public string BackupDirectory { get; private set; } = string.Empty;
 
-        // Información de entorno
         public bool IsDocker { get; private set; }
         public bool IsWindows { get; private set; }
         public bool IsMacOS { get; private set; }
@@ -282,6 +280,27 @@ namespace BeastVault.Api.Infrastructure.Configuration
         public string GetConnectionString()
         {
             return $"Data Source={DatabasePath}";
+        }
+
+        public string GetUserDirectory(int userId)
+        {
+            return Path.Combine(PokemonFilesDirectory, userId.ToString());
+        }
+
+        public string GetUserBackupDirectory(int userId)
+        {
+            return Path.Combine(GetUserDirectory(userId), "backup");
+        }
+
+        public void EnsureUserDirectoriesExist(int userId)
+        {
+            var userDir = GetUserDirectory(userId);
+            var backupDir = GetUserBackupDirectory(userId);
+
+            if (!Directory.Exists(userDir))
+                Directory.CreateDirectory(userDir);
+            if (!Directory.Exists(backupDir))
+                Directory.CreateDirectory(backupDir);
         }
     }
 }

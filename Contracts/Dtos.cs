@@ -447,9 +447,47 @@ namespace BeastVault.Api.Contracts
     /// </summary>
     public record PokemonTagsRequest
     {
-        /// <summary>
-        /// List of tag IDs to assign to the Pokémon
-        /// </summary>
         public required int[] TagIds { get; init; }
+    }
+
+    // ── Auth & User DTOs ──
+
+    public record LoginRequest
+    {
+        public required string Username { get; init; }
+        public string? Password { get; init; }
+    }
+
+    public record LoginResponse
+    {
+        public required string Token { get; init; }
+        public required UserDto User { get; init; }
+    }
+
+    public record RegisterRequest
+    {
+        [Required]
+        [StringLength(50, MinimumLength = 1)]
+        public required string Username { get; init; }
+        public string? Password { get; init; }
+        public string Role { get; init; } = "Standard";
+    }
+
+    public record UpdateUserRequest
+    {
+        [StringLength(50, MinimumLength = 1)]
+        public string? Username { get; init; }
+        public string? Password { get; init; }
+        public bool? RemovePassword { get; init; }
+        public string? Role { get; init; }
+    }
+
+    public record UserDto
+    {
+        public int Id { get; init; }
+        public required string Username { get; init; }
+        public required string Role { get; init; }
+        public bool IsDefault { get; init; }
+        public bool HasPassword { get; init; }
     }
 }

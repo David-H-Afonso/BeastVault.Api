@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using BeastVault.Api.Infrastructure;
 using BeastVault.Api.Infrastructure.Services;
+using BeastVault.Api.Infrastructure.Helpers;
 
 namespace BeastVault.Api.Endpoints
 {
@@ -8,14 +9,14 @@ namespace BeastVault.Api.Endpoints
     {
         public static IEndpointRouteBuilder MapMaintenanceEndpoints(this IEndpointRouteBuilder app)
         {
-            app.MapPost("/maintenance/sync", async (AppDbContext db, FileStorageService storage) =>
+            app.MapPost("/maintenance/sync", async (HttpContext httpContext, AppDbContext db, FileStorageService storage) =>
             {
+                var userId = httpContext.GetUserIdOrDefault();
                 var result = new SyncResult();
 
                 try
                 {
-                    // Get all files in database
-                    var allDbFiles = await db.Files.ToListAsync();
+                    var allDbFiles = await db.Files.Where(f => f.UserId == userId).ToListAsync();
                     result.TotalFilesInDatabase = allDbFiles.Count;
 
                     foreach (var dbFile in allDbFiles)
@@ -71,22 +72,21 @@ namespace BeastVault.Api.Endpoints
             .WithSummary("Synchronize database with file system")
             .WithDescription("Removes orphaned entries from database when files no longer exist on disk")
             .WithTags("Maintenance")
+            .RequireAuthorization()
             .Produces<SyncResult>(200)
             .Produces(500);
 
-            app.MapGet("/maintenance/status", async (AppDbContext db, FileStorageService storage) =>
+            app.MapGet("/maintenance/status", async (HttpContext httpContext, AppDbContext db, FileStorageService storage) =>
             {
+                var userId = httpContext.GetUserIdOrDefault();
                 var result = new StatusResult();
 
                 try
                 {
-                    // Get database counts
-                    result.TotalPokemonInDatabase = await db.Pokemon.CountAsync();
-                    result.TotalFilesInDatabase = await db.Files.CountAsync();
+                    result.TotalPokemonInDatabase = await db.Pokemon.Where(p => p.UserId == userId).CountAsync();
+                    result.TotalFilesInDatabase = await db.Files.Where(f => f.UserId == userId).CountAsync();
 
-                    // Check file system status
-                    var documentsPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-                    var backupPath = Path.Combine(documentsPath, "BeastVault", "backup");
+                    var backupPath = storage.GetUserBackupDirectory(userId);
 
                     if (Directory.Exists(backupPath))
                     {
@@ -104,7 +104,7 @@ namespace BeastVault.Api.Endpoints
                     }
 
                     // Check for orphaned entries
-                    var allDbFiles = await db.Files.ToListAsync();
+                    var allDbFiles = await db.Files.Where(f => f.UserId == userId).ToListAsync();
                     foreach (var dbFile in allDbFiles)
                     {
                         var fileExists = !string.IsNullOrEmpty(dbFile.StoredPath) && File.Exists(dbFile.StoredPath);
@@ -131,15 +131,17 @@ namespace BeastVault.Api.Endpoints
             .WithSummary("Get database and file system status")
             .WithDescription("Shows counts and identifies orphaned entries")
             .WithTags("Maintenance")
+            .RequireAuthorization()
             .Produces<StatusResult>(200)
             .Produces(500);
 
             // GET endpoint to check for duplicates of a specific Pokemon by ID
-            app.MapGet("/maintenance/pokemon/{id}/duplicates", async (int id, AppDbContext db) =>
+            app.MapGet("/maintenance/pokemon/{id}/duplicates", async (int id, HttpContext httpContext, AppDbContext db, FileStorageService storage) =>
             {
+                var userId = httpContext.GetUserIdOrDefault();
                 try
                 {
-                    var pokemon = await db.Pokemon.FirstOrDefaultAsync(p => p.Id == id);
+                    var pokemon = await db.Pokemon.FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId);
                     if (pokemon == null)
                     {
                         return Results.NotFound($"Pokemon with ID {id} not found");
@@ -151,28 +153,25 @@ namespace BeastVault.Api.Endpoints
                         return Results.Problem("Associated file not found");
                     }
 
-                    // Find all files with the same hash (same Pokemon)
+                    // Find all files with the same hash for this user
                     var duplicateFiles = await db.Files
-                        .Where(f => f.Sha256 == file.Sha256)
+                        .Where(f => f.UserId == userId && f.Sha256 == file.Sha256)
                         .ToListAsync();
 
-                    // Get associated Pokemon for these files
                     var fileIds = duplicateFiles.Select(f => f.Id).ToList();
                     var associatedPokemon = await db.Pokemon
-                        .Where(p => fileIds.Contains(p.FileId))
+                        .Where(p => p.UserId == userId && fileIds.Contains(p.FileId))
                         .ToListAsync();
 
-                    // Find all physical files in user area and backup that match
-                    var documentsPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-                    var beastVaultPath = Path.Combine(documentsPath, "BeastVault");
-                    var backupPath = Path.Combine(beastVaultPath, "backup");
+                    var userDir = storage.GetUserDirectory(userId);
+                    var backupPath = storage.GetUserBackupDirectory(userId);
 
                     var physicalFiles = new List<string>();
                     var backupFiles = new List<string>();
 
-                    if (Directory.Exists(beastVaultPath))
+                    if (Directory.Exists(userDir))
                     {
-                        var allFiles = Directory.GetFiles(beastVaultPath, "*.*", SearchOption.AllDirectories)
+                        var allFiles = Directory.GetFiles(userDir, "*.*", SearchOption.AllDirectories)
                             .Where(f => IsPokemonFile(f))
                             .ToList();
 
@@ -230,6 +229,7 @@ namespace BeastVault.Api.Endpoints
             .WithSummary("Check for duplicates of a specific Pokemon")
             .WithDescription("Returns information about database entries and physical files for the same Pokemon")
             .WithTags("Maintenance")
+            .RequireAuthorization()
             .Produces<PokemonDuplicatesInfo>(200)
             .Produces(404)
             .Produces(500);
@@ -239,12 +239,14 @@ namespace BeastVault.Api.Endpoints
                 int id,
                 int expectedFileCount,
                 bool includeBackup,
+                HttpContext httpContext,
                 AppDbContext db,
                 FileStorageService storage) =>
             {
+                var userId = httpContext.GetUserIdOrDefault();
                 try
                 {
-                    var pokemon = await db.Pokemon.FirstOrDefaultAsync(p => p.Id == id);
+                    var pokemon = await db.Pokemon.FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId);
                     if (pokemon == null)
                     {
                         return Results.NotFound($"Pokemon with ID {id} not found");
@@ -256,22 +258,19 @@ namespace BeastVault.Api.Endpoints
                         return Results.Problem("Associated file not found");
                     }
 
-                    // Find all files with the same hash
                     var duplicateFiles = await db.Files
-                        .Where(f => f.Sha256 == file.Sha256)
+                        .Where(f => f.UserId == userId && f.Sha256 == file.Sha256)
                         .ToListAsync();
 
-                    // Count actual physical files for verification
-                    var documentsPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-                    var beastVaultPath = Path.Combine(documentsPath, "BeastVault");
-                    var backupPath = Path.Combine(beastVaultPath, "backup");
+                    var userDir = storage.GetUserDirectory(userId);
+                    var backupPath = storage.GetUserBackupDirectory(userId);
 
                     var physicalFiles = new List<string>();
                     var backupFiles = new List<string>();
 
-                    if (Directory.Exists(beastVaultPath))
+                    if (Directory.Exists(userDir))
                     {
-                        var allFiles = Directory.GetFiles(beastVaultPath, "*.*", SearchOption.AllDirectories)
+                        var allFiles = Directory.GetFiles(userDir, "*.*", SearchOption.AllDirectories)
                             .Where(f => IsPokemonFile(f))
                             .ToList();
 
@@ -285,18 +284,14 @@ namespace BeastVault.Api.Endpoints
                                 {
                                     var isInBackup = physicalFile.StartsWith(backupPath, StringComparison.OrdinalIgnoreCase);
                                     if (isInBackup)
-                                    {
                                         backupFiles.Add(physicalFile);
-                                    }
                                     else
-                                    {
                                         physicalFiles.Add(physicalFile);
-                                    }
                                 }
                             }
                             catch (Exception ex)
                             {
-                                Console.WriteLine($"Error reading file {physicalFile} for deletion: {ex.Message}");
+                                Console.WriteLine($"Error reading file {physicalFile}: {ex.Message}");
                             }
                         }
                     }
@@ -318,7 +313,7 @@ namespace BeastVault.Api.Endpoints
                     // Remove from database
                     foreach (var dbFile in duplicateFiles)
                     {
-                        var pokemonEntry = await db.Pokemon.FirstOrDefaultAsync(p => p.FileId == dbFile.Id);
+                        var pokemonEntry = await db.Pokemon.FirstOrDefaultAsync(p => p.FileId == dbFile.Id && p.UserId == userId);
                         if (pokemonEntry != null)
                         {
                             // Remove related data
@@ -340,9 +335,9 @@ namespace BeastVault.Api.Endpoints
                     }
 
                     // Remove physical files
-                    if (Directory.Exists(beastVaultPath))
+                    if (Directory.Exists(userDir))
                     {
-                        var allFiles = Directory.GetFiles(beastVaultPath, "*.*", SearchOption.AllDirectories)
+                        var allFiles = Directory.GetFiles(userDir, "*.*", SearchOption.AllDirectories)
                             .Where(f => IsPokemonFile(f))
                             .ToList();
 
@@ -354,30 +349,25 @@ namespace BeastVault.Api.Endpoints
                                 var hash = FileStorageService.ComputeSha256(fileBytes);
                                 if (hash == file.Sha256)
                                 {
-                                    // Check if it's in backup and if we should include it
                                     var isInBackup = physicalFile.StartsWith(backupPath, StringComparison.OrdinalIgnoreCase);
 
                                     if (!isInBackup || includeBackup)
                                     {
                                         if (isInBackup && includeBackup)
                                         {
-                                            // Use DeleteBackup method for backup files
                                             var fileName = Path.GetFileName(physicalFile);
                                             var ext = Path.GetExtension(physicalFile);
                                             try
                                             {
-                                                storage.DeleteBackup(fileName, ext);
+                                                storage.DeleteBackup(userId, fileName, ext);
                                             }
                                             catch (Exception)
                                             {
-                                                // Fallback to direct deletion if DeleteBackup fails
                                                 File.Delete(physicalFile);
-                                                Console.WriteLine($"Used fallback deletion for backup file: {physicalFile}");
                                             }
                                         }
                                         else
                                         {
-                                            // Regular file deletion for non-backup files
                                             File.Delete(physicalFile);
                                         }
                                         result.DeletedPhysicalFiles.Add(physicalFile);
@@ -409,6 +399,7 @@ namespace BeastVault.Api.Endpoints
             .WithSummary("Completely delete a Pokemon and all its duplicates")
             .WithDescription("Removes from database and optionally from backup. Requires expected file count for safety.")
             .WithTags("Maintenance")
+            .RequireAuthorization()
             .Produces<TotalDeletionResult>(200)
             .Produces(400)
             .Produces(404)
