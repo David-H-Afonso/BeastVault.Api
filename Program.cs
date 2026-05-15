@@ -54,30 +54,48 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
 });
 
-// CORS
+// CORS — read comma-separated origins from CORS_ALLOWED_ORIGINS env var
+var corsOriginsRaw = Environment.GetEnvironmentVariable("CORS_ALLOWED_ORIGINS");
+if (!string.IsNullOrWhiteSpace(corsOriginsRaw))
+{
+    var parsedOrigins = corsOriginsRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    for (var i = 0; i < parsedOrigins.Length; i++)
+        builder.Configuration[$"CorsSettings:AllowedOrigins:{i}"] = parsedOrigins[i];
+}
+
+var corsAllowedOrigins = builder.Configuration
+    .GetSection("CorsSettings:AllowedOrigins")
+    .Get<List<string>>() ?? [];
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowLocalhost", policy =>
     {
-        policy.SetIsOriginAllowed(origin =>
+        if (corsAllowedOrigins.Count > 0)
         {
-            if (string.IsNullOrEmpty(origin)) return false;
-            var uri = new Uri(origin);
-
-            if (uri.Host == "localhost" || uri.Host == "127.0.0.1")
-                return true;
-
-            if (uri.Host.StartsWith("192.168.") ||
-                uri.Host.StartsWith("10.") ||
-                uri.Host.StartsWith("172."))
-                return true;
-
-            return false;
-        })
+            policy.WithOrigins(corsAllowedOrigins.ToArray())
+                .AllowAnyMethod()
+                .AllowAnyHeader()
+                .AllowCredentials()
+                .WithExposedHeaders("Content-Disposition", "Content-Length", "Content-Type");
+        }
+        else
+        {
+            // Fallback for local dev: allow localhost and private network IPs
+            policy.SetIsOriginAllowed(origin =>
+            {
+                if (string.IsNullOrEmpty(origin)) return false;
+                var uri = new Uri(origin);
+                return uri.Host == "localhost" || uri.Host == "127.0.0.1"
+                    || uri.Host.StartsWith("192.168.")
+                    || uri.Host.StartsWith("10.")
+                    || uri.Host.StartsWith("172.");
+            })
             .AllowAnyMethod()
             .AllowAnyHeader()
             .AllowCredentials()
             .WithExposedHeaders("Content-Disposition", "Content-Length", "Content-Type");
+        }
     });
 });
 
