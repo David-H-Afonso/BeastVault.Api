@@ -16,33 +16,48 @@ builder.Services.AddSwaggerGen();
 // Registrar servicio de configuración de almacenamiento
 builder.Services.AddSingleton<StorageConfiguration>();
 
-// Add CORS
+// CORS — read comma-separated origins from CORS_ALLOWED_ORIGINS env var
+var corsOriginsRaw = Environment.GetEnvironmentVariable("CORS_ALLOWED_ORIGINS");
+if (!string.IsNullOrWhiteSpace(corsOriginsRaw))
+{
+    var parsedOrigins = corsOriginsRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    for (var i = 0; i < parsedOrigins.Length; i++)
+        builder.Configuration[$"CorsSettings:AllowedOrigins:{i}"] = parsedOrigins[i];
+}
+
+var corsAllowedOrigins = builder.Configuration
+    .GetSection("CorsSettings:AllowedOrigins")
+    .Get<List<string>>() ?? [];
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowLocalhost", policy =>
     {
-        // Para Electron, desarrollo local y CasaOS
-        policy.SetIsOriginAllowed(origin =>
+        if (corsAllowedOrigins.Count > 0)
         {
-            if (string.IsNullOrEmpty(origin)) return false;
-            var uri = new Uri(origin);
-
-            // Permitir localhost y 127.0.0.1 (desarrollo y Electron)
-            if (uri.Host == "localhost" || uri.Host == "127.0.0.1")
-                return true;
-
-            // Permitir redes locales (CasaOS y desarrollo)
-            if (uri.Host.StartsWith("192.168.") ||
-                uri.Host.StartsWith("10.") ||
-                uri.Host.StartsWith("172."))
-                return true;
-
-            return false;
-        })
+            policy.WithOrigins(corsAllowedOrigins.ToArray())
+                .AllowAnyMethod()
+                .AllowAnyHeader()
+                .AllowCredentials()
+                .WithExposedHeaders("Content-Disposition", "Content-Length", "Content-Type");
+        }
+        else
+        {
+            // Fallback para dev local y Electron: permitir localhost y redes privadas
+            policy.SetIsOriginAllowed(origin =>
+            {
+                if (string.IsNullOrEmpty(origin)) return false;
+                var uri = new Uri(origin);
+                return uri.Host == "localhost" || uri.Host == "127.0.0.1"
+                    || uri.Host.StartsWith("192.168.")
+                    || uri.Host.StartsWith("10.")
+                    || uri.Host.StartsWith("172.");
+            })
             .AllowAnyMethod()
             .AllowAnyHeader()
             .AllowCredentials()
             .WithExposedHeaders("Content-Disposition", "Content-Length", "Content-Type");
+        }
     });
 });
 
@@ -80,23 +95,23 @@ app.MapGet("/custom-sprites/search/{pattern}", (string pattern) =>
         Path.Combine(AppContext.BaseDirectory, "assets"),
         Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets")
     };
-    
+
     // Check environment variable for custom assets path
     var envAssetsPath = Environment.GetEnvironmentVariable("BEASTVAULT_ASSETS_PATH");
     if (!string.IsNullOrEmpty(envAssetsPath))
     {
         possiblePaths.Insert(0, envAssetsPath);
     }
-    
+
     // For Electron: try parent directory (resources/backend/assets)
     var parentDir = Directory.GetParent(AppContext.BaseDirectory)?.FullName;
     if (parentDir != null)
     {
         possiblePaths.Add(Path.Combine(parentDir, "assets"));
     }
-    
+
     possiblePaths = possiblePaths.Distinct().ToList();
-    
+
     string? assetsPath = null;
     foreach (var path in possiblePaths)
     {
@@ -106,7 +121,7 @@ app.MapGet("/custom-sprites/search/{pattern}", (string pattern) =>
             break;
         }
     }
-    
+
     if (assetsPath == null)
     {
         return Results.NotFound();
@@ -116,7 +131,7 @@ app.MapGet("/custom-sprites/search/{pattern}", (string pattern) =>
     {
         var cleanPattern = Path.GetFileName(pattern); // Security: remove path traversal
         var matchingFiles = Directory.GetFiles(assetsPath, cleanPattern + "*");
-        
+
         if (matchingFiles.Length > 0)
         {
             // Return just the filename
@@ -146,23 +161,23 @@ app.MapGet("/custom-sprites/{fileName}", (string fileName) =>
         Path.Combine(AppContext.BaseDirectory, "assets"),
         Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets")
     };
-    
+
     // Check environment variable for custom assets path
     var envAssetsPath = Environment.GetEnvironmentVariable("BEASTVAULT_ASSETS_PATH");
     if (!string.IsNullOrEmpty(envAssetsPath))
     {
         possiblePaths.Insert(0, envAssetsPath);
     }
-    
+
     // For Electron: try parent directory (resources/backend/assets)
     var parentDir = Directory.GetParent(AppContext.BaseDirectory)?.FullName;
     if (parentDir != null)
     {
         possiblePaths.Add(Path.Combine(parentDir, "assets"));
     }
-    
+
     possiblePaths = possiblePaths.Distinct().ToList();
-    
+
     string? assetsPath = null;
     foreach (var path in possiblePaths)
     {
@@ -172,7 +187,7 @@ app.MapGet("/custom-sprites/{fileName}", (string fileName) =>
             break;
         }
     }
-    
+
     // Si la carpeta no existe en ninguna ubicación, retornar 404
     if (assetsPath == null)
     {
@@ -183,12 +198,12 @@ app.MapGet("/custom-sprites/{fileName}", (string fileName) =>
         }
         return Results.NotFound();
     }
-    
+
     Console.WriteLine($"📂 Using assets path: {assetsPath}");
-    
+
     // Primero intentar encontrar el archivo exacto
     var filePath = Path.GetFullPath(Path.Combine(assetsPath, fileName));
-    
+
     // Validate that the resolved path is still within the assets directory
     if (!filePath.StartsWith(Path.GetFullPath(assetsPath) + Path.DirectorySeparatorChar) &&
         !filePath.Equals(Path.GetFullPath(assetsPath)))
@@ -213,24 +228,24 @@ app.MapGet("/custom-sprites/{fileName}", (string fileName) =>
     {
         var fileNameWithoutExtension = Path.GetFileNameWithoutExtension(fileName);
         var extension = Path.GetExtension(fileName);
-        
+
         Console.WriteLine($"🔍 Searching for pattern: {fileNameWithoutExtension}*{extension}");
-        
+
         // Buscar archivos que comiencen con el mismo nombre (ignorando timestamps)
         var matchingFiles = Directory.GetFiles(assetsPath, fileNameWithoutExtension + "*" + extension);
-        
+
         Console.WriteLine($"📁 Found {matchingFiles.Length} matching files");
-        
+
         if (matchingFiles.Length > 0)
         {
             // Usar el primer archivo coincidente (idealmente el más reciente)
             var matchedFile = matchingFiles[0];
             Console.WriteLine($"✅ Using matched file: {matchedFile}");
-            
+
             var contentType = fileName.EndsWith(".png") ? "image/png" :
                               fileName.EndsWith(".webp") ? "image/webp" :
                               "application/octet-stream";
-            
+
             return Results.File(matchedFile, contentType);
         }
     }
