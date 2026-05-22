@@ -47,7 +47,10 @@ public record PopulationStatusResponse(
     int TotalSpecies,
     int TotalForms,
     int MaxSpeciesId,
-    DateTime? LastUpdated);
+    DateTime? LastUpdated,
+    bool IsPopulating = false,
+    int PopulatingCurrent = 0,
+    int PopulatingTotal = 0);
 
 public record PopulateResponse(
     string Message,

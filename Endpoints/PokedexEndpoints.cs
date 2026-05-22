@@ -1,4 +1,5 @@
 using BeastVault.Api.Application.Interfaces;
+using BeastVault.Api.Application.Services;
 using BeastVault.Api.Contracts;
 
 namespace BeastVault.Api.Endpoints;
@@ -49,20 +50,34 @@ public static class PokedexEndpoints
         .WithSummary("Get Pokédex cache population status")
         .RequireAuthorization();
 
-        // Admin: populate pokedex cache
-        pokedex.MapPost("/populate", async (PopulateRequest request, IPokedexService pokedexService) =>
+        // Admin: populate pokedex cache (fire-and-forget, poll /status for progress)
+        pokedex.MapPost("/populate", (PopulateRequest request, IServiceScopeFactory scopeFactory) =>
         {
             var startId = request.StartId ?? 1;
-            var endId = request.EndId ?? 1025; // Current max species in PokeAPI
+            var endId = request.EndId ?? 1025;
 
             if (startId < 1 || endId < startId || endId > 10000)
                 return Results.BadRequest(new { message = "Invalid range. Max endId is 10000." });
 
-            var count = await pokedexService.PopulateSpeciesRangeAsync(startId, endId);
-            return Results.Ok(new PopulateResponse(
-                $"Populated {count} species from {startId} to {endId}",
-                count, startId, endId
-            ));
+            if (PokedexService.IsPopulating)
+                return Results.Conflict(new { message = "Population is already in progress. Check /pokedex/status for progress." });
+
+            // Fire and forget - use a new scope so the DbContext lives for the full duration
+            _ = Task.Run(async () =>
+            {
+                using var scope = scopeFactory.CreateScope();
+                var service = scope.ServiceProvider.GetRequiredService<IPokedexService>();
+                try
+                {
+                    await service.PopulateSpeciesRangeAsync(startId, endId);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Background populate error: {ex.Message}");
+                }
+            });
+
+            return Results.Accepted(value: new { message = $"Population started for species {startId}-{endId}. Poll /pokedex/status for progress." });
         })
         .WithName("PopulatePokedex")
         .WithSummary("Populate Pokédex cache from PokeAPI (admin only)")

@@ -13,6 +13,16 @@ public class PokedexService : IPokedexService
     private readonly HttpClient _httpClient;
     private const string POKEAPI_BASE = "https://pokeapi.co/api/v2";
 
+    // Static progress tracking for background population
+    private static volatile bool _isPopulating;
+    private static int _populatingCurrent;
+    private static int _populatingTotal;
+    private static readonly object _populateLock = new();
+
+    public static bool IsPopulating => _isPopulating;
+    public static int PopulatingCurrent => _populatingCurrent;
+    public static int PopulatingTotal => _populatingTotal;
+
     public PokedexService(AppDbContext context, IHttpClientFactory httpClientFactory)
     {
         _context = context;
@@ -101,61 +111,82 @@ public class PokedexService : IPokedexService
             ? await _context.PokedexEntries.MaxAsync(e => e.CachedAt)
             : (DateTime?)null;
 
-        return new PopulationStatusResponse(totalSpecies, totalForms, maxSpeciesId, lastUpdated);
+        return new PopulationStatusResponse(totalSpecies, totalForms, maxSpeciesId, lastUpdated,
+            _isPopulating, _populatingCurrent, _populatingTotal);
     }
 
     public async Task<int> PopulateSpeciesRangeAsync(int startId, int endId, IProgress<string>? progress = null)
     {
+        lock (_populateLock)
+        {
+            if (_isPopulating)
+                return 0; // Already running
+            _isPopulating = true;
+            _populatingCurrent = 0;
+            _populatingTotal = endId - startId + 1;
+        }
+
         int populated = 0;
 
-        for (int speciesId = startId; speciesId <= endId; speciesId++)
+        try
         {
-            try
+            for (int speciesId = startId; speciesId <= endId; speciesId++)
             {
-                progress?.Report($"Fetching species {speciesId}/{endId}...");
+                _populatingCurrent = speciesId - startId + 1;
 
-                var existing = await _context.PokedexEntries.FindAsync(speciesId);
-                if (existing != null)
+                try
                 {
+                    progress?.Report($"Fetching species {speciesId}/{endId}...");
+
+                    var existing = await _context.PokedexEntries.FindAsync(speciesId);
+                    if (existing != null)
+                    {
+                        populated++;
+                        continue;
+                    }
+
+                    var speciesData = await FetchJsonAsync($"{POKEAPI_BASE}/pokemon-species/{speciesId}");
+                    if (speciesData == null) continue;
+
+                    var entry = ParseSpecies(speciesId, speciesData.Value);
+                    _context.PokedexEntries.Add(entry);
+
+                    var varieties = speciesData.Value.GetProperty("varieties").EnumerateArray();
+                    foreach (var variety in varieties)
+                    {
+                        var pokemonUrl = variety.GetProperty("pokemon").GetProperty("url").GetString()!;
+                        var pokemonIdStr = pokemonUrl.TrimEnd('/').Split('/').Last();
+                        if (!int.TryParse(pokemonIdStr, out var pokemonId)) continue;
+
+                        if (await _context.PokedexPokemon.FindAsync(pokemonId) != null) continue;
+
+                        var pokemonData = await FetchJsonAsync($"{POKEAPI_BASE}/pokemon/{pokemonId}");
+                        if (pokemonData == null) continue;
+
+                        var pokemon = ParsePokemon(pokemonId, speciesId, pokemonData.Value);
+                        _context.PokedexPokemon.Add(pokemon);
+
+                        await Task.Delay(50);
+                    }
+
+                    await _context.SaveChangesAsync();
                     populated++;
-                    continue;
+
+                    // Rate limit: PokeAPI allows 100 requests/min
+                    await Task.Delay(200);
                 }
-
-                var speciesData = await FetchJsonAsync($"{POKEAPI_BASE}/pokemon-species/{speciesId}");
-                if (speciesData == null) continue;
-
-                var entry = ParseSpecies(speciesId, speciesData.Value);
-                _context.PokedexEntries.Add(entry);
-
-                var varieties = speciesData.Value.GetProperty("varieties").EnumerateArray();
-                foreach (var variety in varieties)
+                catch (Exception ex)
                 {
-                    var pokemonUrl = variety.GetProperty("pokemon").GetProperty("url").GetString()!;
-                    var pokemonIdStr = pokemonUrl.TrimEnd('/').Split('/').Last();
-                    if (!int.TryParse(pokemonIdStr, out var pokemonId)) continue;
-
-                    if (await _context.PokedexPokemon.FindAsync(pokemonId) != null) continue;
-
-                    var pokemonData = await FetchJsonAsync($"{POKEAPI_BASE}/pokemon/{pokemonId}");
-                    if (pokemonData == null) continue;
-
-                    var pokemon = ParsePokemon(pokemonId, speciesId, pokemonData.Value);
-                    _context.PokedexPokemon.Add(pokemon);
-
-                    await Task.Delay(50);
+                    Console.WriteLine($"Error populating species {speciesId}: {ex.Message}");
+                    progress?.Report($"Error on species {speciesId}: {ex.Message}");
                 }
-
-                await _context.SaveChangesAsync();
-                populated++;
-
-                // Rate limit: PokeAPI allows 100 requests/min
-                await Task.Delay(200);
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error populating species {speciesId}: {ex.Message}");
-                progress?.Report($"Error on species {speciesId}: {ex.Message}");
-            }
+        }
+        finally
+        {
+            _isPopulating = false;
+            _populatingCurrent = 0;
+            _populatingTotal = 0;
         }
 
         return populated;
