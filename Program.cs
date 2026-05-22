@@ -1,5 +1,6 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using BeastVault.Api.Configuration;
@@ -178,34 +179,56 @@ using (var scope = app.Services.CreateScope())
     // Asegurar que la base de datos esté creada con el esquema actual
     try
     {
-        var pendingMigrations = (await db.Database.GetPendingMigrationsAsync()).ToList();
-        var appliedMigrations = (await db.Database.GetAppliedMigrationsAsync()).ToList();
+        // Pre-migration fix: detect existing DB without migration history
+        // Uses a separate raw connection to avoid EF Core connection management issues
+        var connectionString = db.Database.GetConnectionString();
+        Console.WriteLine("🔍 Checking database migration state...");
 
-        // Detect pre-migration database: tables exist but no migration history
-        if (pendingMigrations.Any() && !appliedMigrations.Any())
+        using (var rawConn = new SqliteConnection(connectionString))
         {
-            var conn = db.Database.GetDbConnection();
-            await conn.OpenAsync();
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='Files'";
-            var tableExists = Convert.ToInt32(await cmd.ExecuteScalarAsync()) > 0;
-            await conn.CloseAsync();
+            await rawConn.OpenAsync();
 
-            if (tableExists)
+            // Check if Files table exists (sign of pre-migration DB)
+            using (var checkFiles = rawConn.CreateCommand())
             {
-                Console.WriteLine("⚠️ Pre-migration database detected. Marking existing schema migrations as applied...");
-                var preExistingMigrations = new[] {
-                    "20250910204519_InitialCreate",
-                    "20250912122823_EnsureTagsTableExists"
-                };
-                foreach (var migrationId in preExistingMigrations)
+                checkFiles.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='Files'";
+                var filesExist = Convert.ToInt64(await checkFiles.ExecuteScalarAsync()) > 0;
+                Console.WriteLine($"🔍 Files table exists: {filesExist}");
+
+                if (filesExist)
                 {
-                    if (pendingMigrations.Contains(migrationId))
+                    // Ensure migration history table exists
+                    using (var createHistory = rawConn.CreateCommand())
                     {
-                        await db.Database.ExecuteSqlRawAsync(
-                            "INSERT OR IGNORE INTO \"__EFMigrationsHistory\" (\"MigrationId\", \"ProductVersion\") VALUES ({0}, {1})",
-                            migrationId, "9.0.8");
-                        Console.WriteLine($"  ✅ Marked as applied: {migrationId}");
+                        createHistory.CommandText = "CREATE TABLE IF NOT EXISTS \"__EFMigrationsHistory\" (\"MigrationId\" TEXT NOT NULL CONSTRAINT \"PK___EFMigrationsHistory\" PRIMARY KEY, \"ProductVersion\" TEXT NOT NULL)";
+                        await createHistory.ExecuteNonQueryAsync();
+                    }
+
+                    // Check if it has any records
+                    using (var checkHistory = rawConn.CreateCommand())
+                    {
+                        checkHistory.CommandText = "SELECT COUNT(*) FROM \"__EFMigrationsHistory\"";
+                        var historyCount = Convert.ToInt64(await checkHistory.ExecuteScalarAsync());
+                        Console.WriteLine($"🔍 Migration history records: {historyCount}");
+
+                        if (historyCount == 0)
+                        {
+                            Console.WriteLine("⚠️ Pre-migration database detected. Marking existing schema migrations as applied...");
+                            var preExisting = new[]
+                            {
+                                "20250910204519_InitialCreate",
+                                "20250912122823_EnsureTagsTableExists"
+                            };
+                            foreach (var mig in preExisting)
+                            {
+                                using var insert = rawConn.CreateCommand();
+                                insert.CommandText = "INSERT OR IGNORE INTO \"__EFMigrationsHistory\" (\"MigrationId\", \"ProductVersion\") VALUES ($id, $ver)";
+                                insert.Parameters.AddWithValue("$id", mig);
+                                insert.Parameters.AddWithValue("$ver", "9.0.8");
+                                var rows = await insert.ExecuteNonQueryAsync();
+                                Console.WriteLine($"  ✅ Marked as applied: {mig} ({rows} rows affected)");
+                            }
+                        }
                     }
                 }
             }
