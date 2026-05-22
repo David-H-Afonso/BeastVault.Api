@@ -2,20 +2,21 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using BeastVault.Api.Infrastructure;
 using BeastVault.Api.Infrastructure.Services;
+using BeastVault.Api.Helpers;
 
 namespace BeastVault.Api.Endpoints
 {
     public static class ImportEndpoints
     {
-        /// <summary>
-        /// Import one or multiple .pk* Pokémon files. Uses multipart/form-data.
-        /// </summary>
         public static IEndpointRouteBuilder MapImportEndpoints(this IEndpointRouteBuilder app)
         {
             app.MapPost("/import",
                 [Consumes("multipart/form-data")]
-            async ([FromForm] IFormFileCollection files, AppDbContext db, FileStorageService storage, PkhexCoreParser parser) =>
+            async ([FromForm] IFormFileCollection files, AppDbContext db, FileStorageService storage, PkhexCoreParser parser, HttpContext ctx) =>
             {
+                var userId = ctx.GetUserId();
+                if (userId == null) return Results.Unauthorized();
+
                 if (files == null || files.Count == 0)
                     return Results.BadRequest("No files provided.");
 
@@ -39,8 +40,8 @@ namespace BeastVault.Api.Endpoints
                         continue;
                     }
 
-                    // Dedupe by hash
-                    var existingFile = await db.Files.FirstOrDefaultAsync(x => x.Sha256 == parse.File.Sha256);
+                    // Dedupe by hash per user
+                    var existingFile = await db.Files.FirstOrDefaultAsync(x => x.Sha256 == parse.File.Sha256 && x.UserId == userId);
                     if (existingFile != null)
                     {
                         imported.Add(new { FileName = f.FileName, Status = "duplicate", PokemonId = existingFile.Id });
@@ -57,12 +58,14 @@ namespace BeastVault.Api.Endpoints
 
                     // Save backup in database
                     parse.File.RawBlob = bytes;
+                    parse.File.UserId = userId.Value;
 
                     // Persistence
                     db.Files.Add(parse.File);
                     await db.SaveChangesAsync();
 
                     parse.Pokemon.FileId = parse.File.Id;
+                    parse.Pokemon.UserId = userId.Value;
                     db.Pokemon.Add(parse.Pokemon);
                     await db.SaveChangesAsync();
 
@@ -110,7 +113,8 @@ namespace BeastVault.Api.Endpoints
             .Accepts<IFormFileCollection>("multipart/form-data")
             .Produces<List<object>>(200)
             .Produces(400)
-            .DisableAntiforgery();
+            .DisableAntiforgery()
+            .RequireAuthorization();
 
             return app;
         }

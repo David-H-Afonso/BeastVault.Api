@@ -8,7 +8,8 @@ namespace BeastVault.Api.Endpoints
         public static void MapScanEndpoints(this IEndpointRouteBuilder app)
         {
             var group = app.MapGroup("/scan")
-                .WithTags("File Scanning");
+                .WithTags("File Scanning")
+                .RequireAuthorization();
 
             group.MapPost("/directory", ScanDirectory)
                 .WithName("ScanDirectory")

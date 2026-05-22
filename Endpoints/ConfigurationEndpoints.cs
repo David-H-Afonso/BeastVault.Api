@@ -33,7 +33,8 @@ namespace BeastVault.Api.Endpoints
             .WithName("GetConfiguration")
             .WithDescription("Returns the current system configuration")
             .WithTags("Configuration")
-            .Produces<object>(StatusCodes.Status200OK);
+            .Produces<object>(StatusCodes.Status200OK)
+            .RequireAuthorization("AdminPolicy");
 
             app.MapPost("/config/database", ([FromBody] PathUpdateRequest request, StorageConfiguration config) =>
             {
@@ -92,7 +93,8 @@ namespace BeastVault.Api.Endpoints
             .WithDescription("Updates the database path configuration")
             .WithTags("Configuration")
             .Produces<object>(StatusCodes.Status200OK)
-            .Produces<object>(StatusCodes.Status400BadRequest);
+            .Produces<object>(StatusCodes.Status400BadRequest)
+            .RequireAuthorization("AdminPolicy");
 
             app.MapPost("/config/pokemon", ([FromBody] PathUpdateRequest request, StorageConfiguration config) =>
             {
@@ -167,7 +169,8 @@ namespace BeastVault.Api.Endpoints
             .WithDescription("Updates the Pokemon files directory path")
             .WithTags("Configuration")
             .Produces<object>(StatusCodes.Status200OK)
-            .Produces<object>(StatusCodes.Status400BadRequest);
+            .Produces<object>(StatusCodes.Status400BadRequest)
+            .RequireAuthorization("AdminPolicy");
         }
 
         /// <summary>

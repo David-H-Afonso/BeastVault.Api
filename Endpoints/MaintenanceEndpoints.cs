@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using BeastVault.Api.Contracts;
 using BeastVault.Api.Infrastructure;
 using BeastVault.Api.Infrastructure.Services;
 
@@ -72,11 +73,12 @@ namespace BeastVault.Api.Endpoints
             .WithDescription("Removes orphaned entries from database when files no longer exist on disk")
             .WithTags("Maintenance")
             .Produces<SyncResult>(200)
-            .Produces(500);
+            .Produces(500)
+            .RequireAuthorization("AdminPolicy");
 
             app.MapGet("/maintenance/status", async (AppDbContext db, FileStorageService storage) =>
             {
-                var result = new StatusResult();
+                var result = new MaintenanceStatusResult();
 
                 try
                 {
@@ -131,8 +133,9 @@ namespace BeastVault.Api.Endpoints
             .WithSummary("Get database and file system status")
             .WithDescription("Shows counts and identifies orphaned entries")
             .WithTags("Maintenance")
-            .Produces<StatusResult>(200)
-            .Produces(500);
+            .Produces<MaintenanceStatusResult>(200)
+            .Produces(500)
+            .RequireAuthorization("AdminPolicy");
 
             // GET endpoint to check for duplicates of a specific Pokemon by ID
             app.MapGet("/maintenance/pokemon/{id}/duplicates", async (int id, AppDbContext db) =>
@@ -232,7 +235,8 @@ namespace BeastVault.Api.Endpoints
             .WithTags("Maintenance")
             .Produces<PokemonDuplicatesInfo>(200)
             .Produces(404)
-            .Produces(500);
+            .Produces(500)
+            .RequireAuthorization("AdminPolicy");
 
             // DELETE endpoint for total elimination
             app.MapDelete("/maintenance/pokemon/{id}/total", async (
@@ -410,9 +414,9 @@ namespace BeastVault.Api.Endpoints
             .WithDescription("Removes from database and optionally from backup. Requires expected file count for safety.")
             .WithTags("Maintenance")
             .Produces<TotalDeletionResult>(200)
-            .Produces(400)
             .Produces(404)
-            .Produces(500);
+            .Produces(500)
+            .RequireAuthorization("AdminPolicy");
 
             return app;
         }
@@ -427,58 +431,5 @@ namespace BeastVault.Api.Endpoints
                 _ => false
             };
         }
-    }
-
-    public class SyncResult
-    {
-        public int TotalFilesInDatabase { get; set; }
-        public List<string> RemovedFiles { get; set; } = new();
-        public List<string> RemovedPokemon { get; set; } = new();
-        public List<string> ValidFiles { get; set; } = new();
-        public string Summary => $"Removed {RemovedFiles.Count} orphaned files and {RemovedPokemon.Count} Pokemon. {ValidFiles.Count} files remain valid.";
-    }
-
-    public class StatusResult
-    {
-        public int TotalPokemonInDatabase { get; set; }
-        public int TotalFilesInDatabase { get; set; }
-        public int TotalFilesInBackupDirectory { get; set; }
-        public string BackupDirectoryPath { get; set; } = string.Empty;
-        public List<OrphanedFileInfo> OrphanedFiles { get; set; } = new();
-        public bool IsInSync => OrphanedFiles.Count == 0;
-        public string Summary => $"Database: {TotalPokemonInDatabase} Pokemon, {TotalFilesInDatabase} files. Directory: {TotalFilesInBackupDirectory} files. Orphaned: {OrphanedFiles.Count}";
-    }
-
-    public class OrphanedFileInfo
-    {
-        public int Id { get; set; }
-        public string FileName { get; set; } = string.Empty;
-        public string StoredPath { get; set; } = string.Empty;
-    }
-
-    public class PokemonDuplicatesInfo
-    {
-        public int PokemonId { get; set; }
-        public string PokemonName { get; set; } = string.Empty;
-        public string FileHash { get; set; } = string.Empty;
-        public int DatabaseEntries { get; set; }
-        public int PhysicalFiles { get; set; } // User files only, excludes backup
-        public List<string> PhysicalFilePaths { get; set; } = new(); // All paths including backup for reference
-        public List<int> DatabaseFileIds { get; set; } = new();
-        public bool IsInBackup { get; set; }
-        public string Summary => $"{PokemonName}: {DatabaseEntries} DB entries, {PhysicalFiles} user files, backup: {IsInBackup}";
-    }
-
-    public class TotalDeletionResult
-    {
-        public int DeletedFromDatabase { get; set; }
-        public bool IncludedBackup { get; set; }
-        public List<string> DeletedPokemonNames { get; set; } = new();
-        public List<string> DeletedDatabaseFiles { get; set; } = new();
-        public List<string> DeletedPhysicalFiles { get; set; } = new();
-        public List<string> PreservedBackupFiles { get; set; } = new();
-        public List<string> Errors { get; set; } = new();
-        public string Summary => $"Deleted {DeletedFromDatabase} DB entries, {DeletedPhysicalFiles.Count} physical files. " +
-                                $"Preserved {PreservedBackupFiles.Count} backup files. {Errors.Count} errors.";
     }
 }

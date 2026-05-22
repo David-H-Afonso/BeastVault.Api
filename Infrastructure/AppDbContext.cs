@@ -15,15 +15,29 @@ namespace BeastVault.Api.Infrastructure
         public DbSet<TagEntity> Tags => Set<TagEntity>();
         public DbSet<PokemonTagEntity> PokemonTags => Set<PokemonTagEntity>();
         public DbSet<FileTagEntity> FileTags => Set<FileTagEntity>();
+        public DbSet<User> Users => Set<User>();
 
         protected override void OnModelCreating(ModelBuilder b)
         {
+            b.Entity<User>().HasKey(x => x.Id);
+            b.Entity<User>().HasIndex(x => x.Username).IsUnique();
+
             b.Entity<FileEntity>().HasKey(x => x.Id);
-            b.Entity<FileEntity>().HasIndex(x => x.Sha256).IsUnique();
+            b.Entity<FileEntity>().HasIndex(x => new { x.UserId, x.Sha256 }).IsUnique();
+            b.Entity<FileEntity>().HasIndex(x => x.UserId);
+            b.Entity<FileEntity>()
+                .HasOne(f => f.User)
+                .WithMany(u => u.Files)
+                .HasForeignKey(f => f.UserId);
 
             b.Entity<PokemonEntity>().HasKey(x => x.Id);
             b.Entity<PokemonEntity>().HasIndex(x => new { x.SpeciesId, x.IsShiny });
             b.Entity<PokemonEntity>().HasIndex(x => x.OriginGame);
+            b.Entity<PokemonEntity>().HasIndex(x => x.UserId);
+            b.Entity<PokemonEntity>()
+                .HasOne(p => p.User)
+                .WithMany(u => u.Pokemon)
+                .HasForeignKey(p => p.UserId);
 
             // Configure relationship between Pokemon and File
             b.Entity<PokemonEntity>()
@@ -36,7 +50,12 @@ namespace BeastVault.Api.Infrastructure
             b.Entity<RelearnMoveEntity>().HasKey(x => new { x.PokemonId, x.Slot });
 
             b.Entity<TagEntity>().HasKey(x => x.Id);
-            b.Entity<TagEntity>().HasIndex(x => x.Name).IsUnique(); // Case-sensitive unique constraint
+            b.Entity<TagEntity>().HasIndex(x => new { x.UserId, x.Name }).IsUnique();
+            b.Entity<TagEntity>().HasIndex(x => x.UserId);
+            b.Entity<TagEntity>()
+                .HasOne(t => t.User)
+                .WithMany(u => u.Tags)
+                .HasForeignKey(t => t.UserId);
             b.Entity<PokemonTagEntity>().HasKey(x => new { x.PokemonId, x.TagId });
             b.Entity<FileTagEntity>().HasKey(x => new { x.FileId, x.TagId });
 

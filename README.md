@@ -115,56 +115,33 @@ dotnet publish -c Release -o ./publish
 
 ```
 BeastVault.Api/
+├── Application/
+│   ├── Interfaces/              # Service contracts (IAuthService, IPokemonService, ITagService)
+│   └── Services/                # Application services (Auth, Pokemon, Tag)
+├── Configuration/                # Settings classes (JwtSettings)
 ├── Contracts/                    # Data Transfer Objects (DTOs)
 │   ├── AdvancedPokemonQuery.cs  # Advanced query parameters
-│   └── Dtos.cs                  # API response models
+│   ├── AuthDtos.cs              # Auth request/response models
+│   ├── ImportDtos.cs            # Import models
+│   ├── MaintenanceDtos.cs       # Maintenance endpoint models
+│   ├── PokemonDtos.cs           # Pokemon API models
+│   └── TagDtos.cs               # Tag models
 ├── Domain/                      # Core business logic
 │   ├── Entities/                # Database entities
-│   │   └── index.cs            # Pokemon, Stats, Moves, Tags entities
-│   ├── Services/               # Domain services
-│   │   ├── PkheXMappingService.cs
-│   │   ├── PokemonQueryService.cs
-│   │   └── PokemonSortingService.cs
-│   ├── Specifications/         # Query specifications
-│   │   ├── IPokemonSpecification.cs
-│   │   └── PokemonSpecifications.cs
-│   └── ValueObjects/           # Value objects
-│       ├── PokemonQueryOptions.cs
-│       └── ShowdownExport.cs
-├── Endpoints/                  # API endpoints (Minimal APIs)
-│   ├── ConfigurationEndpoints.cs
-│   ├── FilesEndpoints.cs
-│   ├── HealthEndpoints.cs
-│   ├── ImportEndpoints.cs
-│   ├── MaintenanceEndpoints.cs
-│   ├── PokemonEndpoints.cs
-│   ├── ScanEndpoints.cs
-│   └── TagEndpoints.cs
-├── Extensions/                 # Extension methods
-│   └── WebApplicationExtension.cs
-├── Infrastructure/             # Data access and external services
-│   ├── Configuration/
-│   │   └── StorageConfiguration.cs
-│   ├── Mappings/
-│   │   └── PkhexMappings.cs
-│   ├── Services/
-│   │   ├── FileStorageService.cs
-│   │   ├── FileWatcherService.cs
-│   │   ├── PkhexCoreParser.cs
-│   │   ├── PkHexStringService.cs
-│   │   ├── PokemonComparisonService.cs
-│   │   ├── PokemonFormService.cs
-│   │   └── PokemonGameInfoService.cs
-│   ├── AppDbContext.cs         # Entity Framework context
-│   └── EnvironmentUtils.cs
-├── Migrations/                 # EF Core database migrations
-├── Properties/
-│   └── launchSettings.json     # Development profiles
-├── appsettings.json           # Configuration
-├── docker-compose.yml         # Docker Compose setup
-├── Dockerfile                 # Docker build instructions
-├── Program.cs                 # Application entry point
-└── BeastVault.Api.csproj     # Project file
+│   ├── Services/                # Domain services (query, sorting)
+│   ├── Specifications/          # Query specifications (composable filters)
+│   └── ValueObjects/            # Value objects (query options, Showdown export)
+├── Endpoints/                   # API endpoints (Minimal APIs)
+├── Extensions/                  # DI registration extensions
+├── Helpers/                     # HTTP context helpers
+├── Infrastructure/
+│   ├── Configuration/           # Storage path configuration
+│   ├── Services/                # PKHeX parsing, file storage, game info
+│   └── AppDbContext.cs          # Entity Framework context
+├── Middleware/                  # Error handling middleware
+├── Migrations/                  # EF Core database migrations
+├── Program.cs                   # Application entry point
+└── BeastVault.Api.csproj        # Project file
 ```
 
 ## Acknowledgments

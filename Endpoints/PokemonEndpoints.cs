@@ -5,6 +5,8 @@ using BeastVault.Api.Infrastructure;
 using BeastVault.Api.Infrastructure.Services;
 using BeastVault.Api.Domain.Services;
 using BeastVault.Api.Domain.ValueObjects;
+using BeastVault.Api.Helpers;
+using BeastVault.Api.Application.Interfaces;
 
 
 namespace BeastVault.Api.Endpoints
@@ -55,274 +57,61 @@ namespace BeastVault.Api.Endpoints
             .WithSummary("⚠️ ADMIN: Delete entire database")
             .WithDescription("DANGEROUS: Removes all Pokémon, files and data from the database. For development/testing only.")
             .WithTags("Admin")
-            .Produces<string>(200);
+            .Produces<string>(200)
+            .RequireAuthorization("AdminPolicy");
             // Eliminar de la base de datos y archivo principal (conserva backup)
-            app.MapDelete("/pokemon/{pokemonId:int}/database", async (int pokemonId, AppDbContext db, FileStorageService storage) =>
+            app.MapDelete("/pokemon/{pokemonId:int}/database", async (int pokemonId, IPokemonService pokemonService, HttpContext ctx) =>
             {
-                var poke = await db.Pokemon.FirstOrDefaultAsync(x => x.Id == pokemonId);
-                if (poke == null) return Results.NotFound();
+                var userId = ctx.GetUserId();
+                if (userId == null) return Results.Unauthorized();
 
-                // Obtener el archivo asociado antes de eliminar
-                var file = await db.Files.FirstOrDefaultAsync(f => f.Id == poke.FileId);
+                var (success, fileDeleted, backupPreserved) = await pokemonService.DeletePokemonDatabaseAsync(userId.Value, pokemonId);
+                if (!success) return Results.NotFound();
 
-                // Eliminar datos relacionados
-                var stats = await db.Stats.Where(s => s.PokemonId == pokemonId).ToListAsync();
-                db.Stats.RemoveRange(stats);
-                var moves = await db.Moves.Where(m => m.PokemonId == pokemonId).ToListAsync();
-                db.Moves.RemoveRange(moves);
-                var relearnMoves = await db.RelearnMoves.Where(rm => rm.PokemonId == pokemonId).ToListAsync();
-                db.RelearnMoves.RemoveRange(relearnMoves);
-
-                // Eliminar Pokemon
-                db.Pokemon.Remove(poke);
-
-                // Eliminar archivo físico principal si existe (preserva backup)
-                bool fileDeleted = false;
-                if (file != null)
-                {
-                    Console.WriteLine($"Attempting to delete main file: {file.FileName}");
-                    Console.WriteLine($"Stored path: {file.StoredPath}");
-                    Console.WriteLine($"File exists: {File.Exists(file.StoredPath)}");
-
-                    try
-                    {
-                        storage.Delete(file.StoredPath);
-                        fileDeleted = true;
-                        Console.WriteLine($"Main file deleted successfully: {file.StoredPath} (backup preserved)");
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"Could not delete main file {file.StoredPath}: {ex.Message}");
-                        Console.WriteLine($"Exception details: {ex}");
-                    }
-
-                    db.Files.Remove(file);
-                }
-                else
-                {
-                    Console.WriteLine("No file record found for this Pokemon");
-                }
-
-                await db.SaveChangesAsync();
-                return Results.Ok(new { Deleted = true, FileDeleted = fileDeleted, BackupPreserved = true });
+                return Results.Ok(new { Deleted = true, FileDeleted = fileDeleted, BackupPreserved = backupPreserved });
             })
             .WithName("DeletePokemonFromDatabase")
             .WithSummary("Delete a Pokémon and its main file (preserves backup)")
             .WithDescription("Removes the Pokémon, all its related data from the database, and deletes the main file on disk. Backup file is preserved.")
             .WithTags("Pokemon", "Admin")
             .Produces<object>(200)
-            .Produces(404);
+            .Produces(404)
+            .RequireAuthorization();
 
             // Eliminar de base de datos y backup/disco
-            app.MapDelete("/pokemon/{pokemonId:int}/backup", async (int pokemonId, AppDbContext db, FileStorageService storage) =>
+            app.MapDelete("/pokemon/{pokemonId:int}/backup", async (int pokemonId, IPokemonService pokemonService, HttpContext ctx) =>
             {
-                var poke = await db.Pokemon.FirstOrDefaultAsync(x => x.Id == pokemonId);
-                if (poke == null) return Results.NotFound();
+                var userId = ctx.GetUserId();
+                if (userId == null) return Results.Unauthorized();
 
-                // Obtener el archivo asociado antes de eliminar
-                var file = await db.Files.FirstOrDefaultAsync(f => f.Id == poke.FileId);
+                var (success, fileDeleted, backupDeleted, fileName) = await pokemonService.DeletePokemonAndBackupAsync(userId.Value, pokemonId);
+                if (!success) return Results.NotFound();
 
-                // Eliminar datos relacionados
-                var stats = await db.Stats.Where(s => s.PokemonId == pokemonId).ToListAsync();
-                db.Stats.RemoveRange(stats);
-                var moves = await db.Moves.Where(m => m.PokemonId == pokemonId).ToListAsync();
-                db.Moves.RemoveRange(moves);
-                var relearnMoves = await db.RelearnMoves.Where(rm => rm.PokemonId == pokemonId).ToListAsync();
-                db.RelearnMoves.RemoveRange(relearnMoves);
-
-                // Eliminar Pokemon
-                db.Pokemon.Remove(poke);
-
-                // Eliminar archivo físico principal si existe
-                bool fileDeleted = false;
-                bool backupDeleted = false;
-                if (file != null)
-                {
-                    Console.WriteLine($"Attempting to delete file: {file.FileName}");
-                    Console.WriteLine($"Stored path: {file.StoredPath}");
-                    Console.WriteLine($"File exists: {File.Exists(file.StoredPath)}");
-
-                    try
-                    {
-                        storage.Delete(file.StoredPath);
-                        fileDeleted = true;
-                        Console.WriteLine($"Physical file deleted successfully: {file.StoredPath}");
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"Could not delete physical file {file.StoredPath}: {ex.Message}");
-                        Console.WriteLine($"Exception details: {ex}");
-                    }
-
-                    // Eliminar backup si existe
-                    if (!string.IsNullOrEmpty(file.OriginalFileName))
-                    {
-                        try
-                        {
-                            var ext = Path.GetExtension(file.OriginalFileName);
-                            storage.DeleteBackup(file.OriginalFileName, ext);
-                            backupDeleted = true;
-                            Console.WriteLine($"Backup file deleted successfully: {file.OriginalFileName}");
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"Could not delete backup file {file.OriginalFileName}: {ex.Message}");
-                        }
-                    }
-
-                    db.Files.Remove(file);
-                }
-                else
-                {
-                    Console.WriteLine("No file record found for this Pokemon");
-                }
-
-                await db.SaveChangesAsync();
-                return Results.Ok(new { Deleted = true, FileDeleted = fileDeleted, BackupDeleted = backupDeleted, FileName = file?.FileName });
+                return Results.Ok(new { Deleted = true, FileDeleted = fileDeleted, BackupDeleted = backupDeleted, FileName = fileName });
             })
             .WithName("DeletePokemonAndBackup")
             .WithSummary("Delete a Pokémon completely (database + file)")
             .WithDescription("Removes the Pokémon, all its related data and the original file from disk. Irreversible operation.")
             .WithTags("Pokemon", "Admin")
             .Produces<object>(200)
-            .Produces(404);
-
-            // ...resto de endpoints (get, patch, etc.)...
+            .Produces(404)
+            .RequireAuthorization();
 
             // Main Pokemon query endpoint with advanced filtering, sorting and pagination
-            app.MapGet("/pokemon", async (AppDbContext db, [AsParameters] AdvancedPokemonQuery q) =>
+            app.MapGet("/pokemon", async (IPokemonService pokemonService, [AsParameters] AdvancedPokemonQuery q, HttpContext ctx) =>
             {
-                var baseQuery = db.Pokemon.AsNoTracking().AsQueryable();
+                var userId = ctx.GetUserId();
+                if (userId == null) return Results.Unauthorized();
 
-                // Apply advanced filtering and sorting
-                var query = PokemonQueryService.BuildQuery(baseQuery, q);
-
-                var total = await query.CountAsync();
-                var items = await query
-                    .Skip(q.Skip)
-                    .Take(q.Take)
-                    .Join(db.Files, p => p.FileId, f => f.Id, (p, f) => new { Pokemon = p, File = f })
-                    .Select(pf => new
-                    {
-                        Id = pf.Pokemon.Id,
-                        SpeciesId = pf.Pokemon.SpeciesId,
-                        Form = PokemonFormService.GetDisplayForm(pf.Pokemon, pf.File.Format),
-                        Nickname = pf.Pokemon.Nickname,
-                        Level = pf.Pokemon.Level,
-                        IsShiny = pf.Pokemon.IsShiny,
-                        BallId = pf.Pokemon.BallId,
-                        TeraType = pf.Pokemon.TeraType,
-                        HeldItemId = pf.Pokemon.HeldItemId,
-                        Gender = pf.Pokemon.Gender,
-                        SpriteKey = pf.Pokemon.SpriteKey,
-                        OriginGeneration = PokemonGameInfoService.GetSpeciesOriginGeneration(pf.Pokemon.SpeciesId),
-                        CapturedGeneration = PokemonGameInfoService.GetCapturedGeneration(pf.Pokemon.OriginGame, pf.File.Format),
-                        CanGigantamax = pf.Pokemon.CanGigantamax,
-                        HasMegaStone = PokemonFormService.CheckHasMegaStone(pf.Pokemon)
-                    })
-                    .ToListAsync();
-
-                // Get all Pokemon IDs to fetch their tags
-                var pokemonIds = items.Select(i => i.Id).ToList();
-                var pokemonTags = await db.PokemonTags
-                    .Where(pt => pokemonIds.Contains(pt.PokemonId))
-                    .Include(pt => pt.Tag)
-                    .GroupBy(pt => pt.PokemonId)
-                    .ToDictionaryAsync(
-                        g => g.Key,
-                        g => g.Select(pt => new TagDto
-                        {
-                            Id = pt.Tag.Id,
-                            Name = pt.Tag.Name,
-                            ImagePath = pt.Tag.ImagePath,
-                            PokemonCount = 0 // Not relevant in Pokemon list context
-                        })
-                        .OrderBy(t => t.Name)
-                        .ToList()
-                    );
-
-                // Create the final DTOs with tags
-                var resultItems = items.Select(item =>
-                {
-                    // Get form name - adjust for Mega Evolution if applicable
-                    string formName = PkHexStringService.GetFormName(item.SpeciesId, item.Form);
-
-                    // Override form name for Mega Evolution Pokemon
-                    if (item.HasMegaStone && item.Form > 0)
-                    {
-                        // Special handling for Pokemon with multiple Mega forms
-                        if (item.SpeciesId == 6) // Charizard
-                        {
-                            formName = item.Form == 1 ? "Mega X" : "Mega Y";
-                        }
-                        else if (item.SpeciesId == 26) // Raichu
-                        {
-                            formName = item.Form == 1 ? "Mega X" : "Mega Y";
-                        }
-                        else if (item.SpeciesId == 150) // Mewtwo
-                        {
-                            formName = item.Form == 1 ? "Mega X" : "Mega Y";
-                        }
-                        else if (item.SpeciesId == 359 && item.Form == 2) // Absol Z
-                        {
-                            formName = "Mega Z";
-                        }
-                        else if (item.SpeciesId == 445 && item.Form == 2) // Garchomp Z
-                        {
-                            formName = "Mega Z";
-                        }
-                        else if (item.SpeciesId == 448 && item.Form == 2) // Lucario Z
-                        {
-                            formName = "Mega Z";
-                        }
-                        else if (item.SpeciesId == 678 && item.Form == 2) // Meowstic Female
-                        {
-                            formName = "Mega (Female)";
-                        }
-                        else
-                        {
-                            formName = "Mega";
-                        }
-                    }
-
-                    return new PokemonListItemDto
-                    {
-                        Id = item.Id,
-                        SpeciesId = item.SpeciesId,
-                        SpeciesName = PkHexStringService.GetSpeciesName(item.SpeciesId),
-                        Form = item.Form,
-                        FormName = formName,
-                        Nickname = item.Nickname,
-                        Level = item.Level,
-                        IsShiny = item.IsShiny,
-                        BallId = item.BallId,
-                        TeraType = item.TeraType,
-                        HeldItemId = item.HeldItemId,
-                        Gender = item.Gender,
-                        SpriteKey = item.SpriteKey,
-                        OriginGeneration = item.OriginGeneration,
-                        CapturedGeneration = item.CapturedGeneration,
-                        CanGigantamax = item.CanGigantamax,
-                        HasMegaStone = item.HasMegaStone,
-                        Tags = pokemonTags.GetValueOrDefault(item.Id, new List<TagDto>())
-                    };
-                }).ToList();
-
-                // Get query statistics for monitoring
-                var stats = PokemonQueryService.GetQueryStats(q);
-
-                return Results.Ok(new
-                {
-                    Items = resultItems,
-                    Total = total,
-                    Stats = stats
-                });
+                var result = await pokemonService.GetPokemonListAsync(userId.Value, q);
+                return Results.Ok(result);
             })
             .WithName("GetPokemonList")
             .WithSummary("Get Pokemon with advanced filtering, sorting and pagination")
             .WithDescription("Main endpoint with comprehensive filtering by types, generations, stats, and flexible sorting options.")
             .WithTags("Pokemon")
-            .Produces<object>(200);
+            .Produces<object>(200)
+            .RequireAuthorization();
 
             // Metadata endpoint for frontend helpers
             app.MapGet("/pokemon/metadata", () =>
@@ -404,48 +193,48 @@ namespace BeastVault.Api.Endpoints
             .WithSummary("Get metadata for Pokemon filtering and sorting")
             .WithDescription("Returns available options for types, generations, sort fields, and other filter metadata.")
             .WithTags("Pokemon", "Metadata")
-            .Produces<object>(200);
+            .Produces<object>(200)
+            .RequireAuthorization();
 
-            app.MapGet("/pokemon/{id:int}", async (int id, AppDbContext db) =>
+            app.MapGet("/pokemon/{id:int}", async (int id, IPokemonService pokemonService, HttpContext ctx) =>
             {
-                var p = await db.Pokemon.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
-                if (p == null) return Results.NotFound();
-                var stats = await db.Stats.AsNoTracking().FirstOrDefaultAsync(x => x.PokemonId == p.Id);
-                var moves = await db.Moves.AsNoTracking().Where(x => x.PokemonId == p.Id).OrderBy(x => x.Slot).ToListAsync();
-                var relearnMoves = await db.RelearnMoves.AsNoTracking().Where(x => x.PokemonId == p.Id).OrderBy(x => x.Slot).ToListAsync();
-                return Results.Ok(new PokemonDetailDto(p, stats, moves, relearnMoves));
+                var userId = ctx.GetUserId();
+                if (userId == null) return Results.Unauthorized();
+
+                var detail = await pokemonService.GetPokemonByIdAsync(userId.Value, id);
+                return detail is not null ? Results.Ok(detail) : Results.NotFound();
             })
             .WithName("GetPokemonById")
             .WithSummary("Get complete details of a Pokémon")
             .WithDescription("Returns all data of a specific Pokémon including stats, moves and relearn moves.")
             .WithTags("Pokemon")
             .Produces<PokemonDetailDto>(200)
-            .Produces(404);
+            .Produces(404)
+            .RequireAuthorization();
 
-            app.MapGet("/pokemon/{id:int}/showdown", async (int id, AppDbContext db) =>
+            app.MapGet("/pokemon/{id:int}/showdown", async (int id, IPokemonService pokemonService, HttpContext ctx) =>
             {
-                var p = await db.Pokemon.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
-                if (p == null) return Results.NotFound();
-                var stats = await db.Stats.AsNoTracking().FirstOrDefaultAsync(x => x.PokemonId == p.Id);
-                var moves = await db.Moves.AsNoTracking().Where(x => x.PokemonId == p.Id).OrderBy(x => x.Slot).ToListAsync();
-                var text = BeastVault.Api.Domain.ValueObjects.ShowdownExport.From(p, stats, moves);
-                return Results.Text(text);
+                var userId = ctx.GetUserId();
+                if (userId == null) return Results.Unauthorized();
+
+                var text = await pokemonService.GetShowdownExportAsync(userId.Value, id);
+                return text is not null ? Results.Text(text) : Results.NotFound();
             })
             .WithName("ExportPokemonShowdown")
             .WithSummary("Export a Pokémon in Pokémon Showdown format")
             .WithDescription("Generates a Pokémon Showdown set with all the Pokémon data (moves, stats, item, etc.).")
             .WithTags("Pokemon")
             .Produces<string>(200, "text/plain")
-            .Produces(404);
+            .Produces(404)
+            .RequireAuthorization();
 
-            app.MapPatch("/pokemon/{id:int}", async (int id, UpdatePokemonDto dto, AppDbContext db) =>
+            app.MapPatch("/pokemon/{id:int}", async (int id, UpdatePokemonDto dto, IPokemonService pokemonService, HttpContext ctx) =>
             {
-                var p = await db.Pokemon.FirstOrDefaultAsync(x => x.Id == id);
-                if (p == null) return Results.NotFound();
-                if (dto.Favorite.HasValue) p.Favorite = dto.Favorite.Value;
-                if (dto.Notes is not null) p.Notes = dto.Notes;
-                await db.SaveChangesAsync();
-                return Results.NoContent();
+                var userId = ctx.GetUserId();
+                if (userId == null) return Results.Unauthorized();
+
+                var updated = await pokemonService.UpdatePokemonAsync(userId.Value, id, dto);
+                return updated ? Results.NoContent() : Results.NotFound();
             })
             .WithName("UpdatePokemon")
             .WithSummary("Update Pokémon properties")
@@ -453,34 +242,25 @@ namespace BeastVault.Api.Endpoints
             .WithTags("Pokemon")
             .Accepts<UpdatePokemonDto>("application/json")
             .Produces(204)
-            .Produces(404);
+            .Produces(404)
+            .RequireAuthorization();
 
             // Compare two Pokemon to see differences (useful for debugging trades)
-            app.MapGet("/pokemon/compare/{id1:int}/{id2:int}", async (int id1, int id2, AppDbContext db) =>
+            app.MapGet("/pokemon/compare/{id1:int}/{id2:int}", async (int id1, int id2, IPokemonService pokemonService, HttpContext ctx) =>
             {
-                var p1 = await db.Pokemon.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id1);
-                var p2 = await db.Pokemon.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id2);
+                var userId = ctx.GetUserId();
+                if (userId == null) return Results.Unauthorized();
 
-                if (p1 == null || p2 == null)
-                    return Results.NotFound("One or both Pokemon not found");
-
-                var comparison = PokemonComparisonService.Compare(p1, p2);
-
-                return Results.Ok(new
-                {
-                    Pokemon1 = new { Id = p1.Id, Species = PkHexStringService.GetSpeciesName(p1.SpeciesId), Nickname = p1.Nickname },
-                    Pokemon2 = new { Id = p2.Id, Species = PkHexStringService.GetSpeciesName(p2.SpeciesId), Nickname = p2.Nickname },
-                    AreIdentical = comparison.AreIdentical,
-                    Differences = comparison.Differences,
-                    Summary = comparison.AreIdentical ? "Pokemon are identical" : $"Found {comparison.Differences.Count} differences"
-                });
+                var result = await pokemonService.ComparePokemonAsync(userId.Value, id1, id2);
+                return result is not null ? Results.Ok(result) : Results.NotFound("One or both Pokemon not found");
             })
             .WithName("ComparePokemon")
             .WithSummary("Compare two Pokémon and show differences")
             .WithDescription("Analyzes and compares all fields of two different Pokémon. Useful for detecting changes after trades or edits.")
             .WithTags("Pokemon", "Comparison")
             .Produces<object>(200)
-            .Produces(404);
+            .Produces(404)
+            .RequireAuthorization();
 
             // Debug endpoint to check OriginGame values
             app.MapGet("/debug/origin-games", async (AppDbContext db) =>
@@ -503,7 +283,8 @@ namespace BeastVault.Api.Endpoints
                 return Results.Ok(results);
             })
             .WithName("DebugOriginGames")
-            .WithTags("Debug");
+            .WithTags("Debug")
+            .RequireAuthorization("AdminPolicy");
 
             return app;
         }
