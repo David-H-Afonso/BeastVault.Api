@@ -1,6 +1,5 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using BeastVault.Api.Configuration;
@@ -179,63 +178,109 @@ using (var scope = app.Services.CreateScope())
     // Asegurar que la base de datos esté creada con el esquema actual
     try
     {
-        // Pre-migration fix: detect existing DB without migration history
-        // Uses a separate raw connection to avoid EF Core connection management issues
-        var connectionString = db.Database.GetConnectionString();
-        Console.WriteLine("🔍 Checking database migration state...");
+        await db.Database.MigrateAsync();
+        Console.WriteLine("✅ Base de datos migrada correctamente.");
+    }
+    catch (Exception ex) when (ex.Message.Contains("already exists"))
+    {
+        // Pre-existing database without migration history (like Games Database pattern).
+        // Tables exist but EF can't apply migrations. Repair schema manually.
+        Console.WriteLine($"⚠️ Migration failed: {ex.Message}");
+        Console.WriteLine("⚠️ Pre-existing database detected. Repairing schema...");
 
-        using (var rawConn = new SqliteConnection(connectionString))
+        var conn = db.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+            await conn.OpenAsync();
+
+        // 1. Create Users table
+        using (var cmd = conn.CreateCommand())
         {
-            await rawConn.OpenAsync();
+            cmd.CommandText = @"CREATE TABLE IF NOT EXISTS ""Users"" (
+                ""Id"" INTEGER NOT NULL CONSTRAINT ""PK_Users"" PRIMARY KEY AUTOINCREMENT,
+                ""Username"" TEXT NOT NULL,
+                ""PasswordHash"" TEXT NULL,
+                ""Role"" INTEGER NOT NULL DEFAULT 0,
+                ""IsDefault"" INTEGER NOT NULL DEFAULT 0,
+                ""CreatedAt"" TEXT NOT NULL DEFAULT '2026-01-01T00:00:00Z'
+            )";
+            await cmd.ExecuteNonQueryAsync();
+            Console.WriteLine("  ✅ Users table ensured");
+        }
 
-            // Check if Files table exists (sign of pre-migration DB)
-            using (var checkFiles = rawConn.CreateCommand())
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Users_Username"" ON ""Users"" (""Username"")";
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        // 2. Add UserId columns if missing
+        foreach (var (table, nullable) in new[] { ("Files", false), ("Pokemon", false), ("Tags", true) })
+        {
+            using var checkCmd = conn.CreateCommand();
+            checkCmd.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name='UserId'";
+            var colExists = Convert.ToInt64(await checkCmd.ExecuteScalarAsync()) > 0;
+
+            if (!colExists)
             {
-                checkFiles.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='Files'";
-                var filesExist = Convert.ToInt64(await checkFiles.ExecuteScalarAsync()) > 0;
-                Console.WriteLine($"🔍 Files table exists: {filesExist}");
+                using var alterCmd = conn.CreateCommand();
+                alterCmd.CommandText = nullable
+                    ? $@"ALTER TABLE ""{table}"" ADD COLUMN ""UserId"" INTEGER"
+                    : $@"ALTER TABLE ""{table}"" ADD COLUMN ""UserId"" INTEGER NOT NULL DEFAULT 1";
+                await alterCmd.ExecuteNonQueryAsync();
 
-                if (filesExist)
+                if (nullable)
                 {
-                    // Ensure migration history table exists
-                    using (var createHistory = rawConn.CreateCommand())
-                    {
-                        createHistory.CommandText = "CREATE TABLE IF NOT EXISTS \"__EFMigrationsHistory\" (\"MigrationId\" TEXT NOT NULL CONSTRAINT \"PK___EFMigrationsHistory\" PRIMARY KEY, \"ProductVersion\" TEXT NOT NULL)";
-                        await createHistory.ExecuteNonQueryAsync();
-                    }
-
-                    // Check if it has any records
-                    using (var checkHistory = rawConn.CreateCommand())
-                    {
-                        checkHistory.CommandText = "SELECT COUNT(*) FROM \"__EFMigrationsHistory\"";
-                        var historyCount = Convert.ToInt64(await checkHistory.ExecuteScalarAsync());
-                        Console.WriteLine($"🔍 Migration history records: {historyCount}");
-
-                        if (historyCount == 0)
-                        {
-                            Console.WriteLine("⚠️ Pre-migration database detected. Marking existing schema migrations as applied...");
-                            var preExisting = new[]
-                            {
-                                "20250910204519_InitialCreate",
-                                "20250912122823_EnsureTagsTableExists"
-                            };
-                            foreach (var mig in preExisting)
-                            {
-                                using var insert = rawConn.CreateCommand();
-                                insert.CommandText = "INSERT OR IGNORE INTO \"__EFMigrationsHistory\" (\"MigrationId\", \"ProductVersion\") VALUES ($id, $ver)";
-                                insert.Parameters.AddWithValue("$id", mig);
-                                insert.Parameters.AddWithValue("$ver", "9.0.8");
-                                var rows = await insert.ExecuteNonQueryAsync();
-                                Console.WriteLine($"  ✅ Marked as applied: {mig} ({rows} rows affected)");
-                            }
-                        }
-                    }
+                    using var updateCmd = conn.CreateCommand();
+                    updateCmd.CommandText = $@"UPDATE ""{table}"" SET ""UserId"" = 1 WHERE ""UserId"" IS NULL";
+                    await updateCmd.ExecuteNonQueryAsync();
                 }
+                Console.WriteLine($"  ✅ Added UserId to {table}");
             }
         }
 
-        await db.Database.MigrateAsync();
-        Console.WriteLine("✅ Base de datos migrada correctamente.");
+        // 3. Create indexes (IF NOT EXISTS is idempotent)
+        var indexes = new[]
+        {
+            @"CREATE INDEX IF NOT EXISTS ""IX_Tags_UserId"" ON ""Tags"" (""UserId"")",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Tags_UserId_Name"" ON ""Tags"" (""UserId"", ""Name"")",
+            @"CREATE INDEX IF NOT EXISTS ""IX_Pokemon_UserId"" ON ""Pokemon"" (""UserId"")",
+            @"CREATE INDEX IF NOT EXISTS ""IX_Files_UserId"" ON ""Files"" (""UserId"")",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Files_UserId_Sha256"" ON ""Files"" (""UserId"", ""Sha256"")",
+        };
+        foreach (var sql in indexes)
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = sql;
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        // 4. Drop old unique indexes (replaced by composite ones above)
+        foreach (var idx in new[] { "IX_Tags_Name", "IX_Files_Sha256" })
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $@"DROP INDEX IF EXISTS ""{idx}""";
+            try { await cmd.ExecuteNonQueryAsync(); } catch { /* may not exist */ }
+        }
+
+        // 5. Mark ALL migrations as applied so future MigrateAsync() skips them
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = @"CREATE TABLE IF NOT EXISTS ""__EFMigrationsHistory"" (
+                ""MigrationId"" TEXT NOT NULL CONSTRAINT ""PK___EFMigrationsHistory"" PRIMARY KEY,
+                ""ProductVersion"" TEXT NOT NULL)";
+            await cmd.ExecuteNonQueryAsync();
+        }
+        foreach (var mig in new[] {
+            "20250910204519_InitialCreate",
+            "20250912122823_EnsureTagsTableExists",
+            "20260521134147_AddUserAndMultiUserSupport" })
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $@"INSERT OR IGNORE INTO ""__EFMigrationsHistory"" (""MigrationId"", ""ProductVersion"") VALUES ('{mig}', '9.0.8')";
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        Console.WriteLine("✅ Schema repaired successfully.");
     }
     catch (Exception ex)
     {
