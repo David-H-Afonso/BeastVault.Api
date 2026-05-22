@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 using BeastVault.Api.Contracts;
 using BeastVault.Api.Domain.Entities;
 using BeastVault.Api.Domain.Services;
@@ -53,6 +54,7 @@ public class PokemonService : IPokemonService
             })
             .ToListAsync();
 
+        // Batch-load tags
         var pokemonIds = items.Select(i => i.Id).ToList();
         var pokemonTags = await _db.PokemonTags
             .Where(pt => pokemonIds.Contains(pt.PokemonId))
@@ -70,6 +72,28 @@ public class PokemonService : IPokemonService
                 .OrderBy(t => t.Name)
                 .ToList()
             );
+
+        // Batch-load Pokédex data for enrichment (types + sprites)
+        var uniqueSpeciesIds = items.Select(i => i.SpeciesId).Distinct().ToList();
+        var pokedexEntries = await _db.PokedexEntries
+            .Where(e => uniqueSpeciesIds.Contains(e.SpeciesId))
+            .ToDictionaryAsync(e => e.SpeciesId);
+
+        // Build mapping: (speciesId, form) -> PokeAPI pokemonId using Varieties
+        var neededPokemonIds = new HashSet<int>();
+        var formToPokemonId = new Dictionary<string, int>();
+
+        foreach (var item in items)
+        {
+            var pokeApiPokemonId = ResolvePokeApiPokemonId(item.SpeciesId, item.Form, item.CanGigantamax, item.HasMegaStone, pokedexEntries);
+            var key = $"{item.SpeciesId}-{item.Form}-{item.CanGigantamax}-{item.HasMegaStone}";
+            formToPokemonId[key] = pokeApiPokemonId;
+            neededPokemonIds.Add(pokeApiPokemonId);
+        }
+
+        var pokedexPokemon = await _db.PokedexPokemon
+            .Where(p => neededPokemonIds.Contains(p.PokemonId))
+            .ToDictionaryAsync(p => p.PokemonId);
 
         var resultItems = items.Select(item =>
         {
@@ -93,6 +117,17 @@ public class PokemonService : IPokemonService
                 };
             }
 
+            // Resolve enrichment data from Pokédex cache
+            var key = $"{item.SpeciesId}-{item.Form}-{item.CanGigantamax}-{item.HasMegaStone}";
+            var pokeApiId = formToPokemonId.GetValueOrDefault(key, item.SpeciesId);
+            pokedexPokemon.TryGetValue(pokeApiId, out var cachedPokemon);
+            pokedexEntries.TryGetValue(item.SpeciesId, out var cachedSpecies);
+
+            var (type1, type2) = ExtractTypes(cachedPokemon);
+            var sprites = BuildSpritesDto(cachedPokemon, cachedSpecies);
+            var ballName = PkHexStringService.GetBallName(item.BallId);
+            var ballSpriteUrl = BuildBallSpriteUrl(ballName);
+
             return new PokemonListItemDto
             {
                 Id = item.Id,
@@ -112,13 +147,161 @@ public class PokemonService : IPokemonService
                 CapturedGeneration = item.CapturedGeneration,
                 CanGigantamax = item.CanGigantamax,
                 HasMegaStone = item.HasMegaStone,
-                Tags = pokemonTags.GetValueOrDefault(item.Id, new List<TagDto>())
+                Tags = pokemonTags.GetValueOrDefault(item.Id, new List<TagDto>()),
+                Type1 = type1,
+                Type2 = type2,
+                BallName = ballName,
+                BallSpriteUrl = ballSpriteUrl,
+                Sprites = sprites
             };
         }).ToList();
 
         var stats = PokemonQueryService.GetQueryStats(q);
 
         return new { Items = resultItems, Total = total, Stats = stats };
+    }
+
+    /// <summary>
+    /// Resolves the PokeAPI pokemon ID for a given species+form combination using cached Varieties data.
+    /// </summary>
+    private static int ResolvePokeApiPokemonId(int speciesId, int form, bool canGigantamax, bool hasMegaStone, Dictionary<int, PokedexEntry> entries)
+    {
+        if (!entries.TryGetValue(speciesId, out var entry))
+            return speciesId; // fallback to speciesId as pokemonId (works for form 0)
+
+        try
+        {
+            var varieties = JsonSerializer.Deserialize<List<JsonElement>>(entry.Varieties);
+            if (varieties == null || varieties.Count == 0)
+                return speciesId;
+
+            // For Gigantamax, look for a gmax variety
+            if (canGigantamax)
+            {
+                var gmaxVariety = varieties.FirstOrDefault(v =>
+                    v.TryGetProperty("name", out var n) && (n.GetString()?.Contains("-gmax") ?? false));
+                if (gmaxVariety.ValueKind != JsonValueKind.Undefined && gmaxVariety.TryGetProperty("id", out var gmaxId))
+                    return gmaxId.GetInt32();
+            }
+
+            // For Mega evolutions, look for mega variety matching the form
+            if (hasMegaStone && form > 0)
+            {
+                var megaVarieties = varieties.Where(v =>
+                    v.TryGetProperty("name", out var n) && (n.GetString()?.Contains("-mega") ?? false)).ToList();
+
+                // Special cases: Charizard, Mewtwo have mega-x and mega-y
+                if (speciesId is 6 or 150)
+                {
+                    var suffix = form == 1 ? "-mega-x" : "-mega-y";
+                    var megaMatch = megaVarieties.FirstOrDefault(v =>
+                        v.TryGetProperty("name", out var n) && (n.GetString()?.EndsWith(suffix) ?? false));
+                    if (megaMatch.ValueKind != JsonValueKind.Undefined && megaMatch.TryGetProperty("id", out var megaId))
+                        return megaId.GetInt32();
+                }
+                else if (megaVarieties.Count > 0)
+                {
+                    if (megaVarieties[0].TryGetProperty("id", out var megaId))
+                        return megaId.GetInt32();
+                }
+            }
+
+            // Standard form lookup
+            if (form < varieties.Count && varieties[form].TryGetProperty("id", out var varId))
+                return varId.GetInt32();
+        }
+        catch { /* fallback */ }
+
+        return speciesId;
+    }
+
+    /// <summary>
+    /// Extracts type1 and type2 from cached PokedexPokemon Types JSON.
+    /// </summary>
+    private static (string? type1, string? type2) ExtractTypes(PokedexPokemon? cached)
+    {
+        if (cached == null) return (null, null);
+
+        try
+        {
+            var types = JsonSerializer.Deserialize<List<JsonElement>>(cached.Types);
+            if (types == null || types.Count == 0) return (null, null);
+
+            var sorted = types
+                .OrderBy(t => t.TryGetProperty("slot", out var s) ? s.GetInt32() : 99)
+                .ToList();
+
+            var type1 = sorted.ElementAtOrDefault(0).TryGetProperty("name", out var n1) ? n1.GetString() : null;
+            var type2 = sorted.Count > 1 && sorted[1].TryGetProperty("name", out var n2) ? n2.GetString() : null;
+
+            return (type1, type2);
+        }
+        catch { return (null, null); }
+    }
+
+    /// <summary>
+    /// Builds sprite URLs from cached PokedexPokemon Sprites JSON.
+    /// </summary>
+    private static PokemonSpritesDto BuildSpritesDto(PokedexPokemon? cached, PokedexEntry? species)
+    {
+        if (cached == null) return new PokemonSpritesDto();
+
+        try
+        {
+            var sprites = JsonSerializer.Deserialize<JsonElement>(cached.Sprites);
+
+            string Prop(JsonElement el, params string[] path)
+            {
+                var current = el;
+                foreach (var key in path)
+                {
+                    if (!current.TryGetProperty(key, out var next) || next.ValueKind == JsonValueKind.Null)
+                        return "";
+                    current = next;
+                }
+                return current.ValueKind == JsonValueKind.String ? current.GetString() ?? "" : "";
+            }
+
+            // Build GitHub sprite URLs
+            var pokemonName = cached.Name;
+            var generation = species?.Generation ?? 9;
+            string githubBase = generation <= 8
+                ? "https://raw.githubusercontent.com/msikma/pokesprite/master/pokemon-gen8"
+                : "https://raw.githubusercontent.com/bamq/pokemon-sprites/main/pokemon";
+
+            return new PokemonSpritesDto
+            {
+                Default = Prop(sprites, "front_default"),
+                Shiny = Prop(sprites, "front_shiny"),
+                Official = Prop(sprites, "other", "official-artwork", "front_default"),
+                OfficialShiny = Prop(sprites, "other", "official-artwork", "front_shiny"),
+                Home = Prop(sprites, "other", "home", "front_default"),
+                HomeShiny = Prop(sprites, "other", "home", "front_shiny"),
+                Showdown = Prop(sprites, "other", "showdown", "front_default"),
+                ShowdownShiny = Prop(sprites, "other", "showdown", "front_shiny"),
+                Github = $"{githubBase}/regular/{pokemonName}.png",
+                GithubShiny = $"{githubBase}/shiny/{pokemonName}.png"
+            };
+        }
+        catch { return new PokemonSpritesDto(); }
+    }
+
+    /// <summary>
+    /// Builds a Pokéball sprite URL from the ball name.
+    /// </summary>
+    private static string BuildBallSpriteUrl(string ballName)
+    {
+        if (string.IsNullOrEmpty(ballName) || ballName == "Unknown") return "";
+
+        // Convert "Poké Ball" → "poke-ball", "Beast Ball" → "beast-ball", etc.
+        var slug = ballName
+            .ToLowerInvariant()
+            .Replace("é", "e")
+            .Replace(" ", "-")
+            .Replace("(", "")
+            .Replace(")", "");
+
+        return $"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/{slug}.png";
     }
 
     public async Task<PokemonDetailDto?> GetPokemonByIdAsync(int userId, int pokemonId)

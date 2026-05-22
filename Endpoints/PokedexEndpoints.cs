@@ -83,8 +83,48 @@ public static class PokedexEndpoints
         .WithSummary("Populate Pokédex cache from PokeAPI (admin only)")
         .RequireAuthorization("AdminPolicy");
 
+        // Admin: populate items cache
+        pokedex.MapPost("/populate-items", (PopulateItemsRequest request, IServiceScopeFactory scopeFactory) =>
+        {
+            var startId = request.StartId ?? 1;
+            var endId = request.EndId ?? 2180;
+
+            if (startId < 1 || endId < startId || endId > 10000)
+                return Results.BadRequest(new { message = "Invalid range." });
+
+            _ = Task.Run(async () =>
+            {
+                using var scope = scopeFactory.CreateScope();
+                var service = scope.ServiceProvider.GetRequiredService<IPokedexService>();
+                try
+                {
+                    await service.PopulateItemsAsync(startId, endId);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Background item populate error: {ex.Message}");
+                }
+            });
+
+            return Results.Accepted(value: new { message = $"Item population started for {startId}-{endId}." });
+        })
+        .WithName("PopulateItems")
+        .WithSummary("Populate item cache from PokeAPI (admin only)")
+        .RequireAuthorization("AdminPolicy");
+
+        // Public: get cached item data
+        pokedex.MapGet("/item/{itemId:int}", async (int itemId, IPokedexService pokedexService) =>
+        {
+            var result = await pokedexService.GetItemAsync(itemId);
+            return result is not null ? Results.Ok(result) : Results.NotFound();
+        })
+        .WithName("GetPokedexItem")
+        .WithSummary("Get cached item data")
+        .RequireAuthorization();
+
         return app;
     }
 }
 
 public record PopulateRequest(int? StartId = null, int? EndId = null);
+public record PopulateItemsRequest(int? StartId = null, int? EndId = null);

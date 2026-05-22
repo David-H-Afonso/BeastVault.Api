@@ -39,6 +39,27 @@ public record PokemonListItemDto
     public bool CanGigantamax { get; init; }
     public bool HasMegaStone { get; init; }
     public List<TagDto> Tags { get; init; } = new();
+
+    // Enriched fields from Pokédex cache (no frontend PokeAPI calls needed)
+    public string? Type1 { get; init; }
+    public string? Type2 { get; init; }
+    public string BallName { get; init; } = "";
+    public string BallSpriteUrl { get; init; } = "";
+    public PokemonSpritesDto? Sprites { get; init; }
+}
+
+public record PokemonSpritesDto
+{
+    public string Default { get; init; } = "";
+    public string Shiny { get; init; } = "";
+    public string Official { get; init; } = "";
+    public string OfficialShiny { get; init; } = "";
+    public string Home { get; init; } = "";
+    public string HomeShiny { get; init; } = "";
+    public string Showdown { get; init; } = "";
+    public string ShowdownShiny { get; init; } = "";
+    public string Github { get; init; } = "";
+    public string GithubShiny { get; init; } = "";
 }
 
 public record PokemonDetailDto

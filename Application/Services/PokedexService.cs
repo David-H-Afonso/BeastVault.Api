@@ -365,4 +365,117 @@ public class PokedexService : IPokedexService
             return "";
         return prop.GetProperty("name").GetString() ?? "";
     }
+
+    public async Task<PokedexItem?> GetItemAsync(int itemId)
+    {
+        return await _context.PokedexItems.FindAsync(itemId);
+    }
+
+    public async Task<int> PopulateItemsAsync(int startId, int endId)
+    {
+        int populated = 0;
+
+        for (int itemId = startId; itemId <= endId; itemId++)
+        {
+            try
+            {
+                if (await _context.PokedexItems.FindAsync(itemId) != null)
+                {
+                    populated++;
+                    continue;
+                }
+
+                var data = await FetchJsonAsync($"{POKEAPI_BASE}/item/{itemId}");
+                if (data == null) continue;
+
+                var item = ParseItem(itemId, data.Value);
+                _context.PokedexItems.Add(item);
+                await _context.SaveChangesAsync();
+                populated++;
+
+                await Task.Delay(200);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error populating item {itemId}: {ex.Message}");
+            }
+        }
+
+        return populated;
+    }
+
+    private static PokedexItem ParseItem(int itemId, JsonElement data)
+    {
+        var name = data.GetProperty("name").GetString() ?? "";
+
+        // Get English display name
+        var displayName = name;
+        if (data.TryGetProperty("names", out var names))
+        {
+            foreach (var n in names.EnumerateArray())
+            {
+                if (n.GetProperty("language").GetProperty("name").GetString() == "en")
+                {
+                    displayName = n.GetProperty("name").GetString() ?? name;
+                    break;
+                }
+            }
+        }
+
+        // Get category
+        var category = "";
+        if (data.TryGetProperty("category", out var cat) && cat.ValueKind != JsonValueKind.Null)
+            category = cat.GetProperty("name").GetString() ?? "";
+
+        // Get sprite URL
+        var spriteUrl = "";
+        if (data.TryGetProperty("sprites", out var sprites) && sprites.TryGetProperty("default", out var defSprite) && defSprite.ValueKind == JsonValueKind.String)
+            spriteUrl = defSprite.GetString() ?? "";
+
+        // Get effect (short English)
+        var effect = "";
+        if (data.TryGetProperty("effect_entries", out var effects))
+        {
+            foreach (var e in effects.EnumerateArray())
+            {
+                if (e.GetProperty("language").GetProperty("name").GetString() == "en")
+                {
+                    effect = e.TryGetProperty("short_effect", out var se)
+                        ? se.GetString() ?? ""
+                        : e.GetProperty("effect").GetString() ?? "";
+                    break;
+                }
+            }
+        }
+
+        // Get flavor text (English)
+        var flavorText = "";
+        if (data.TryGetProperty("flavor_text_entries", out var ftes))
+        {
+            foreach (var ft in ftes.EnumerateArray())
+            {
+                if (ft.GetProperty("language").GetProperty("name").GetString() == "en")
+                {
+                    flavorText = ft.GetProperty("text").GetString() ?? "";
+                    break;
+                }
+            }
+        }
+
+        var flingPower = data.TryGetProperty("fling_power", out var fp) && fp.ValueKind == JsonValueKind.Number
+            ? fp.GetInt32() : (int?)null;
+
+        return new PokedexItem
+        {
+            ItemId = itemId,
+            Name = name,
+            DisplayName = displayName,
+            Category = category,
+            SpriteUrl = spriteUrl,
+            Effect = effect,
+            FlavorText = flavorText.Replace("\f", " ").Replace("\n", " ").Trim(),
+            FlingPower = flingPower,
+            CachedAt = DateTime.UtcNow
+        };
+    }
 }
