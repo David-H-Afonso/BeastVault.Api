@@ -13,5 +13,6 @@ public interface IPokedexService
     Task<SpeciesWithFormsResponse> GetSpeciesWithFormsAsync(int speciesId);
     Task<int> PopulateSpeciesRangeAsync(int startId, int endId, IProgress<string>? progress = null);
     Task<int> PopulateItemsAsync(int startId, int endId);
+    Task<int> PopulateMovesAsync(int startId, int endId);
     Task<PopulationStatusResponse> GetPopulationStatusAsync();
 }

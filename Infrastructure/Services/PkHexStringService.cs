@@ -123,7 +123,7 @@ namespace BeastVault.Api.Infrastructure.Services
         }
 
         /// <summary>
-        /// Get ball name by ID (balls are items in PKHeX)
+        /// Get ball name by ID (balls use the Ball enum, not item indices)
         /// </summary>
         public static string GetBallName(int ballId, int language = 2)
         {
@@ -131,8 +131,10 @@ namespace BeastVault.Api.Infrastructure.Services
 
             try
             {
-                // Ball names are in the items array
-                return GameInfo.Strings.Item[ballId];
+                var ballList = GameInfo.Strings.balllist;
+                if (ballId < ballList.Length && !string.IsNullOrEmpty(ballList[ballId]))
+                    return ballList[ballId];
+                return $"Ball#{ballId}";
             }
             catch
             {

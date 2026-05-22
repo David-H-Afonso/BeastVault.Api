@@ -115,6 +115,38 @@ public static class PokedexEndpoints
         .WithSummary("Populate item cache from PokeAPI (admin only)")
         .RequireAuthorization("AdminPolicy");
 
+        // Admin: populate moves cache
+        pokedex.MapPost("/populate-moves", (PopulateMovesRequest request, IServiceScopeFactory scopeFactory) =>
+        {
+            var startId = request.StartId ?? 1;
+            var endId = request.EndId ?? 919;
+
+            if (startId < 1 || endId < startId || endId > 10000)
+                return Results.BadRequest(new { message = "Invalid range." });
+
+            if (PokedexService.IsPopulatingMoves)
+                return Results.Conflict(new { message = "Move population is already in progress. Check /pokedex/status for progress." });
+
+            _ = Task.Run(async () =>
+            {
+                using var scope = scopeFactory.CreateScope();
+                var service = scope.ServiceProvider.GetRequiredService<IPokedexService>();
+                try
+                {
+                    await service.PopulateMovesAsync(startId, endId);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Background move populate error: {ex.Message}");
+                }
+            });
+
+            return Results.Accepted(value: new { message = $"Move population started for {startId}-{endId}." });
+        })
+        .WithName("PopulateMoves")
+        .WithSummary("Populate move cache from PokeAPI (admin only)")
+        .RequireAuthorization("AdminPolicy");
+
         // Public: get cached item data
         pokedex.MapGet("/item/{itemId:int}", async (int itemId, IPokedexService pokedexService) =>
         {
@@ -131,3 +163,4 @@ public static class PokedexEndpoints
 
 public record PopulateRequest(int? StartId = null, int? EndId = null);
 public record PopulateItemsRequest(int? StartId = null, int? EndId = null);
+public record PopulateMovesRequest(int? StartId = null, int? EndId = null);

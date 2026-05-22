@@ -25,6 +25,12 @@ public class PokedexService : IPokedexService
     private static int _populatingItemsTotal;
     private static readonly object _populateItemsLock = new();
 
+    // Moves progress tracking
+    private static volatile bool _isPopulatingMoves;
+    private static int _populatingMovesCurrent;
+    private static int _populatingMovesTotal;
+    private static readonly object _populateMovesLock = new();
+
     public static bool IsPopulating => _isPopulating;
     public static int PopulatingCurrent => _populatingCurrent;
     public static int PopulatingTotal => _populatingTotal;
@@ -32,6 +38,10 @@ public class PokedexService : IPokedexService
     public static bool IsPopulatingItems => _isPopulatingItems;
     public static int PopulatingItemsCurrent => _populatingItemsCurrent;
     public static int PopulatingItemsTotal => _populatingItemsTotal;
+
+    public static bool IsPopulatingMoves => _isPopulatingMoves;
+    public static int PopulatingMovesCurrent => _populatingMovesCurrent;
+    public static int PopulatingMovesTotal => _populatingMovesTotal;
 
     public PokedexService(AppDbContext context, IHttpClientFactory httpClientFactory)
     {
@@ -124,7 +134,9 @@ public class PokedexService : IPokedexService
         return new PopulationStatusResponse(totalSpecies, totalForms, maxSpeciesId, lastUpdated,
             _isPopulating, _populatingCurrent, _populatingTotal,
             await _context.PokedexItems.CountAsync(),
-            _isPopulatingItems, _populatingItemsCurrent, _populatingItemsTotal);
+            _isPopulatingItems, _populatingItemsCurrent, _populatingItemsTotal,
+            await _context.PokedexMoves.CountAsync(),
+            _isPopulatingMoves, _populatingMovesCurrent, _populatingMovesTotal);
     }
 
     public async Task<int> PopulateSpeciesRangeAsync(int startId, int endId, IProgress<string>? progress = null)
@@ -528,6 +540,139 @@ public class PokedexService : IPokedexService
             Effect = effect,
             FlavorText = flavorText.Replace("\f", " ").Replace("\n", " ").Trim(),
             FlingPower = flingPower,
+            CachedAt = DateTime.UtcNow
+        };
+    }
+
+    public async Task<int> PopulateMovesAsync(int startId, int endId)
+    {
+        lock (_populateMovesLock)
+        {
+            if (_isPopulatingMoves) return 0;
+            _isPopulatingMoves = true;
+            _populatingMovesCurrent = 0;
+            _populatingMovesTotal = endId - startId + 1;
+        }
+
+        int populated = 0;
+
+        try
+        {
+            for (int moveId = startId; moveId <= endId; moveId++)
+            {
+                _populatingMovesCurrent = moveId - startId + 1;
+
+                try
+                {
+                    if (await _context.PokedexMoves.FindAsync(moveId) != null)
+                    {
+                        populated++;
+                        continue;
+                    }
+
+                    var data = await FetchJsonAsync($"{POKEAPI_BASE}/move/{moveId}");
+                    if (data == null) continue;
+
+                    var move = ParseMove(moveId, data.Value);
+                    _context.PokedexMoves.Add(move);
+                    await _context.SaveChangesAsync();
+                    populated++;
+
+                    await Task.Delay(200);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error populating move {moveId}: {ex.Message}");
+                }
+            }
+        }
+        finally
+        {
+            _isPopulatingMoves = false;
+            _populatingMovesCurrent = 0;
+            _populatingMovesTotal = 0;
+        }
+
+        return populated;
+    }
+
+    private static PokedexMove ParseMove(int moveId, JsonElement data)
+    {
+        var name = data.GetProperty("name").GetString() ?? "";
+
+        var displayName = name;
+        if (data.TryGetProperty("names", out var names))
+        {
+            foreach (var n in names.EnumerateArray())
+            {
+                if (n.GetProperty("language").GetProperty("name").GetString() == "en")
+                {
+                    displayName = n.GetProperty("name").GetString() ?? name;
+                    break;
+                }
+            }
+        }
+
+        var type = "";
+        if (data.TryGetProperty("type", out var t) && t.ValueKind != JsonValueKind.Null)
+            type = t.GetProperty("name").GetString() ?? "";
+
+        var damageClass = "";
+        if (data.TryGetProperty("damage_class", out var dc) && dc.ValueKind != JsonValueKind.Null)
+            damageClass = dc.GetProperty("name").GetString() ?? "";
+
+        var power = data.TryGetProperty("power", out var pw) && pw.ValueKind == JsonValueKind.Number
+            ? pw.GetInt32() : (int?)null;
+
+        var accuracy = data.TryGetProperty("accuracy", out var acc) && acc.ValueKind == JsonValueKind.Number
+            ? acc.GetInt32() : (int?)null;
+
+        var pp = data.TryGetProperty("pp", out var ppEl) && ppEl.ValueKind == JsonValueKind.Number
+            ? ppEl.GetInt32() : 0;
+
+        var priority = data.TryGetProperty("priority", out var pri) && pri.ValueKind == JsonValueKind.Number
+            ? pri.GetInt32() : 0;
+
+        var effect = "";
+        if (data.TryGetProperty("effect_entries", out var effects))
+        {
+            foreach (var e in effects.EnumerateArray())
+            {
+                if (e.GetProperty("language").GetProperty("name").GetString() == "en")
+                {
+                    effect = e.TryGetProperty("short_effect", out var se)
+                        ? se.GetString() ?? ""
+                        : e.GetProperty("effect").GetString() ?? "";
+                    break;
+                }
+            }
+        }
+
+        var flavorText = "";
+        if (data.TryGetProperty("flavor_text_entries", out var ftes))
+        {
+            foreach (var ft in ftes.EnumerateArray())
+            {
+                if (ft.GetProperty("language").GetProperty("name").GetString() == "en")
+                {
+                    flavorText = ft.GetProperty("text").GetString() ?? "";
+                }
+            }
+        }
+
+        return new PokedexMove
+        {
+            MoveId = moveId,
+            Name = name,
+            DisplayName = displayName,
+            Type = type,
+            DamageClass = damageClass,
+            Power = power,
+            Accuracy = accuracy,
+            PP = pp,
+            Priority = priority,
+            Effect = effect,
+            FlavorText = flavorText.Replace("\f", " ").Replace("\n", " ").Trim(),
             CachedAt = DateTime.UtcNow
         };
     }

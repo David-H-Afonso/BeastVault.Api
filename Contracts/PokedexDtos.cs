@@ -54,7 +54,11 @@ public record PopulationStatusResponse(
     int TotalItems = 0,
     bool IsPopulatingItems = false,
     int PopulatingItemsCurrent = 0,
-    int PopulatingItemsTotal = 0);
+    int PopulatingItemsTotal = 0,
+    int TotalMoves = 0,
+    bool IsPopulatingMoves = false,
+    int PopulatingMovesCurrent = 0,
+    int PopulatingMovesTotal = 0);
 
 public record PopulateResponse(
     string Message,

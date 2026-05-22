@@ -1,4 +1,5 @@
 using BeastVault.Api.Domain.Entities;
+using BeastVault.Api.Infrastructure.Services;
 
 namespace BeastVault.Api.Contracts;
 
@@ -85,6 +86,19 @@ public record PokemonDetailDto
     public bool Favorite { get; init; }
     public string? Notes { get; init; }
 
+    // Enriched name fields resolved from PKHeX
+    public string SpeciesName { get; init; } = "";
+    public string FormName { get; init; } = "";
+    public string NatureName { get; init; } = "";
+    public string AbilityName { get; init; } = "";
+    public string BallName { get; init; } = "";
+    public string GenderName { get; init; } = "";
+    public string? TeraTypeName { get; init; }
+    public string LanguageName { get; init; } = "";
+    public string HeldItemName { get; init; } = "";
+    public string OtGenderName { get; init; } = "";
+    public string OtLanguageName { get; init; } = "";
+
     public uint EncryptionConstant { get; init; }
     public uint PersonalityId { get; init; }
     public uint Experience { get; init; }
@@ -137,6 +151,19 @@ public record PokemonDetailDto
         SpriteKey = p.SpriteKey;
         Favorite = p.Favorite;
         Notes = p.Notes;
+
+        // Enriched name fields
+        SpeciesName = PkHexStringService.GetSpeciesName(p.SpeciesId);
+        FormName = PkHexStringService.GetFormName(p.SpeciesId, p.Form);
+        NatureName = PkHexStringService.GetNatureName(p.Nature);
+        AbilityName = PkHexStringService.GetAbilityName(p.AbilityId);
+        BallName = PkHexStringService.GetBallName(p.BallId);
+        GenderName = p.Gender switch { 0 => "Male", 1 => "Female", _ => "Genderless" };
+        TeraTypeName = p.TeraType.HasValue && p.TeraType.Value >= 0 ? PkHexStringService.GetTypeName(p.TeraType.Value) : null;
+        LanguageName = PkHexStringService.GetLanguageFullName(p.Language);
+        HeldItemName = p.HeldItemId > 0 ? PkHexStringService.GetItemName(p.HeldItemId) : "";
+        OtGenderName = p.OTGender switch { 0 => "Male", 1 => "Female", _ => "Unknown" };
+        OtLanguageName = PkHexStringService.GetLanguageFullName(p.OTLanguage);
 
         EncryptionConstant = p.EncryptionConstant;
         PersonalityId = p.PersonalityId;
@@ -218,20 +245,22 @@ public record MoveDto
 {
     public int Slot { get; init; }
     public int MoveId { get; init; }
+    public string MoveName { get; init; } = "";
     public int PpUps { get; init; }
     public int CurrentPp { get; init; }
 
     public MoveDto() { }
-    public MoveDto(MoveEntity m) { Slot = m.Slot; MoveId = m.MoveId; PpUps = m.PpUps; CurrentPp = m.CurrentPp; }
+    public MoveDto(MoveEntity m) { Slot = m.Slot; MoveId = m.MoveId; MoveName = PkHexStringService.GetMoveName(m.MoveId); PpUps = m.PpUps; CurrentPp = m.CurrentPp; }
 }
 
 public record RelearnMoveDto
 {
     public int Slot { get; init; }
     public int MoveId { get; init; }
+    public string MoveName { get; init; } = "";
 
     public RelearnMoveDto() { }
-    public RelearnMoveDto(RelearnMoveEntity rm) { Slot = rm.Slot; MoveId = rm.MoveId; }
+    public RelearnMoveDto(RelearnMoveEntity rm) { Slot = rm.Slot; MoveId = rm.MoveId; MoveName = PkHexStringService.GetMoveName(rm.MoveId); }
 }
 
 public record UpdatePokemonDto
