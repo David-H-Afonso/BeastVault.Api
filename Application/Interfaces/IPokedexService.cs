@@ -8,6 +8,7 @@ public interface IPokedexService
     Task<PokedexEntry?> GetSpeciesAsync(int speciesId);
     Task<PokedexPokemon?> GetPokemonAsync(int pokemonId);
     Task<PokedexItem?> GetItemAsync(int itemId);
+    Task<PokedexItem?> GetOrFetchItemAsync(int itemId);
     Task<List<PokedexPokemon>> GetPokemonBySpeciesAsync(int speciesId);
     Task<SpeciesWithFormsResponse> GetSpeciesWithFormsAsync(int speciesId);
     Task<int> PopulateSpeciesRangeAsync(int startId, int endId, IProgress<string>? progress = null);

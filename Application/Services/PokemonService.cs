@@ -95,6 +95,12 @@ public class PokemonService : IPokemonService
             .Where(p => neededPokemonIds.Contains(p.PokemonId))
             .ToDictionaryAsync(p => p.PokemonId);
 
+        // Batch-load ball items from PokedexItems for sprite URLs
+        var uniqueBallIds = items.Select(i => i.BallId).Where(b => b > 0).Distinct().ToList();
+        var cachedBallItems = await _db.PokedexItems
+            .Where(i => uniqueBallIds.Contains(i.ItemId))
+            .ToDictionaryAsync(i => i.ItemId);
+
         var resultItems = items.Select(item =>
         {
             string formName = PkHexStringService.GetFormName(item.SpeciesId, item.Form);
@@ -126,7 +132,9 @@ public class PokemonService : IPokemonService
             var (type1, type2) = ExtractTypes(cachedPokemon);
             var sprites = BuildSpritesDto(cachedPokemon, cachedSpecies);
             var ballName = PkHexStringService.GetBallName(item.BallId);
-            var ballSpriteUrl = BuildBallSpriteUrl(ballName);
+            var ballSpriteUrl = cachedBallItems.TryGetValue(item.BallId, out var cachedBall) && !string.IsNullOrEmpty(cachedBall.SpriteUrl)
+                ? cachedBall.SpriteUrl
+                : BuildBallSpriteUrl(ballName);
 
             return new PokemonListItemDto
             {

@@ -92,6 +92,9 @@ public static class PokedexEndpoints
             if (startId < 1 || endId < startId || endId > 10000)
                 return Results.BadRequest(new { message = "Invalid range." });
 
+            if (PokedexService.IsPopulatingItems)
+                return Results.Conflict(new { message = "Item population is already in progress. Check /pokedex/status for progress." });
+
             _ = Task.Run(async () =>
             {
                 using var scope = scopeFactory.CreateScope();

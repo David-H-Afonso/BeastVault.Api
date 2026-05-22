@@ -19,9 +19,19 @@ public class PokedexService : IPokedexService
     private static int _populatingTotal;
     private static readonly object _populateLock = new();
 
+    // Items progress tracking
+    private static volatile bool _isPopulatingItems;
+    private static int _populatingItemsCurrent;
+    private static int _populatingItemsTotal;
+    private static readonly object _populateItemsLock = new();
+
     public static bool IsPopulating => _isPopulating;
     public static int PopulatingCurrent => _populatingCurrent;
     public static int PopulatingTotal => _populatingTotal;
+
+    public static bool IsPopulatingItems => _isPopulatingItems;
+    public static int PopulatingItemsCurrent => _populatingItemsCurrent;
+    public static int PopulatingItemsTotal => _populatingItemsTotal;
 
     public PokedexService(AppDbContext context, IHttpClientFactory httpClientFactory)
     {
@@ -112,7 +122,9 @@ public class PokedexService : IPokedexService
             : (DateTime?)null;
 
         return new PopulationStatusResponse(totalSpecies, totalForms, maxSpeciesId, lastUpdated,
-            _isPopulating, _populatingCurrent, _populatingTotal);
+            _isPopulating, _populatingCurrent, _populatingTotal,
+            await _context.PokedexItems.CountAsync(),
+            _isPopulatingItems, _populatingItemsCurrent, _populatingItemsTotal);
     }
 
     public async Task<int> PopulateSpeciesRangeAsync(int startId, int endId, IProgress<string>? progress = null)
@@ -371,34 +383,75 @@ public class PokedexService : IPokedexService
         return await _context.PokedexItems.FindAsync(itemId);
     }
 
+    public async Task<PokedexItem?> GetOrFetchItemAsync(int itemId)
+    {
+        var existing = await _context.PokedexItems.FindAsync(itemId);
+        if (existing != null) return existing;
+
+        try
+        {
+            var data = await FetchJsonAsync($"{POKEAPI_BASE}/item/{itemId}");
+            if (data == null) return null;
+
+            var item = ParseItem(itemId, data.Value);
+            _context.PokedexItems.Add(item);
+            await _context.SaveChangesAsync();
+            return item;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error fetching item {itemId} on demand: {ex.Message}");
+            return null;
+        }
+    }
+
     public async Task<int> PopulateItemsAsync(int startId, int endId)
     {
+        lock (_populateItemsLock)
+        {
+            if (_isPopulatingItems) return 0;
+            _isPopulatingItems = true;
+            _populatingItemsCurrent = 0;
+            _populatingItemsTotal = endId - startId + 1;
+        }
+
         int populated = 0;
 
-        for (int itemId = startId; itemId <= endId; itemId++)
+        try
         {
-            try
+            for (int itemId = startId; itemId <= endId; itemId++)
             {
-                if (await _context.PokedexItems.FindAsync(itemId) != null)
+                _populatingItemsCurrent = itemId - startId + 1;
+
+                try
                 {
+                    if (await _context.PokedexItems.FindAsync(itemId) != null)
+                    {
+                        populated++;
+                        continue;
+                    }
+
+                    var data = await FetchJsonAsync($"{POKEAPI_BASE}/item/{itemId}");
+                    if (data == null) continue;
+
+                    var item = ParseItem(itemId, data.Value);
+                    _context.PokedexItems.Add(item);
+                    await _context.SaveChangesAsync();
                     populated++;
-                    continue;
+
+                    await Task.Delay(200);
                 }
-
-                var data = await FetchJsonAsync($"{POKEAPI_BASE}/item/{itemId}");
-                if (data == null) continue;
-
-                var item = ParseItem(itemId, data.Value);
-                _context.PokedexItems.Add(item);
-                await _context.SaveChangesAsync();
-                populated++;
-
-                await Task.Delay(200);
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error populating item {itemId}: {ex.Message}");
+                }
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error populating item {itemId}: {ex.Message}");
-            }
+        }
+        finally
+        {
+            _isPopulatingItems = false;
+            _populatingItemsCurrent = 0;
+            _populatingItemsTotal = 0;
         }
 
         return populated;

@@ -50,7 +50,11 @@ public record PopulationStatusResponse(
     DateTime? LastUpdated,
     bool IsPopulating = false,
     int PopulatingCurrent = 0,
-    int PopulatingTotal = 0);
+    int PopulatingTotal = 0,
+    int TotalItems = 0,
+    bool IsPopulatingItems = false,
+    int PopulatingItemsCurrent = 0,
+    int PopulatingItemsTotal = 0);
 
 public record PopulateResponse(
     string Message,
