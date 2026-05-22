@@ -178,7 +178,39 @@ using (var scope = app.Services.CreateScope())
     // Asegurar que la base de datos esté creada con el esquema actual
     try
     {
-        // Usar migraciones en lugar de EnsureCreated para aplicar cambios de esquema
+        var pendingMigrations = (await db.Database.GetPendingMigrationsAsync()).ToList();
+        var appliedMigrations = (await db.Database.GetAppliedMigrationsAsync()).ToList();
+
+        // Detect pre-migration database: tables exist but no migration history
+        if (pendingMigrations.Any() && !appliedMigrations.Any())
+        {
+            var conn = db.Database.GetDbConnection();
+            await conn.OpenAsync();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='Files'";
+            var tableExists = Convert.ToInt32(await cmd.ExecuteScalarAsync()) > 0;
+            await conn.CloseAsync();
+
+            if (tableExists)
+            {
+                Console.WriteLine("⚠️ Pre-migration database detected. Marking existing schema migrations as applied...");
+                var preExistingMigrations = new[] {
+                    "20250910204519_InitialCreate",
+                    "20250912122823_EnsureTagsTableExists"
+                };
+                foreach (var migrationId in preExistingMigrations)
+                {
+                    if (pendingMigrations.Contains(migrationId))
+                    {
+                        await db.Database.ExecuteSqlRawAsync(
+                            "INSERT OR IGNORE INTO \"__EFMigrationsHistory\" (\"MigrationId\", \"ProductVersion\") VALUES ({0}, {1})",
+                            migrationId, "9.0.8");
+                        Console.WriteLine($"  ✅ Marked as applied: {migrationId}");
+                    }
+                }
+            }
+        }
+
         await db.Database.MigrateAsync();
         Console.WriteLine("✅ Base de datos migrada correctamente.");
     }
