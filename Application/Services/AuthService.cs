@@ -107,6 +107,67 @@ public class AuthService : IAuthService
         return true;
     }
 
+    public async Task<bool> RenameUserAsync(int userId, string newUsername)
+    {
+        if (string.IsNullOrWhiteSpace(newUsername)) return false;
+
+        var user = await _context.Users.FindAsync(userId);
+        if (user == null) return false;
+
+        // Check if new username is already taken (case-insensitive)
+        if (await _context.Users.AnyAsync(u => u.Id != userId && u.Username.ToLower() == newUsername.ToLower()))
+            return false;
+
+        user.Username = newUsername.Trim();
+        await _context.SaveChangesAsync();
+        return true;
+    }
+
+    public async Task<bool> UpdateRoleAsync(int requestingUserId, int targetUserId, UserRole newRole)
+    {
+        var target = await _context.Users.FindAsync(targetUserId);
+        if (target == null) return false;
+
+        // If demoting from admin, ensure at least 1 admin remains
+        if (target.Role == UserRole.Admin && newRole != UserRole.Admin)
+        {
+            var adminCount = await _context.Users.CountAsync(u => u.Role == UserRole.Admin);
+            if (adminCount <= 1) return false;
+        }
+
+        target.Role = newRole;
+        await _context.SaveChangesAsync();
+        return true;
+    }
+
+    public async Task<UserPreferencesDto> GetPreferencesAsync(int userId)
+    {
+        var prefs = await _context.UserPreferences.FindAsync(userId);
+        if (prefs == null)
+        {
+            return new UserPreferencesDto("dark", "grid", "sprites", "diagonal-45");
+        }
+        return new UserPreferencesDto(prefs.Theme, prefs.ViewMode, prefs.SpriteType, prefs.BackgroundType);
+    }
+
+    public async Task<UserPreferencesDto> UpdatePreferencesAsync(int userId, UpdatePreferencesRequest request)
+    {
+        var prefs = await _context.UserPreferences.FindAsync(userId);
+        if (prefs == null)
+        {
+            prefs = new UserPreference { UserId = userId };
+            _context.UserPreferences.Add(prefs);
+        }
+
+        if (request.Theme != null) prefs.Theme = request.Theme;
+        if (request.ViewMode != null) prefs.ViewMode = request.ViewMode;
+        if (request.SpriteType != null) prefs.SpriteType = request.SpriteType;
+        if (request.BackgroundType != null) prefs.BackgroundType = request.BackgroundType;
+
+        await _context.SaveChangesAsync();
+        return new UserPreferencesDto(prefs.Theme, prefs.ViewMode, prefs.SpriteType, prefs.BackgroundType);
+    }
+
     public string HashPassword(string password) =>
         BCrypt.Net.BCrypt.HashPassword(password, workFactor: 12);
 

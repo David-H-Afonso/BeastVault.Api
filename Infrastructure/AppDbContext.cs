@@ -16,11 +16,27 @@ namespace BeastVault.Api.Infrastructure
         public DbSet<PokemonTagEntity> PokemonTags => Set<PokemonTagEntity>();
         public DbSet<FileTagEntity> FileTags => Set<FileTagEntity>();
         public DbSet<User> Users => Set<User>();
+        public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
+        public DbSet<PokedexEntry> PokedexEntries => Set<PokedexEntry>();
+        public DbSet<PokedexPokemon> PokedexPokemon => Set<PokedexPokemon>();
 
         protected override void OnModelCreating(ModelBuilder b)
         {
             b.Entity<User>().HasKey(x => x.Id);
             b.Entity<User>().HasIndex(x => x.Username).IsUnique();
+
+            b.Entity<UserPreference>().HasKey(x => x.UserId);
+            b.Entity<UserPreference>()
+                .HasOne(p => p.User)
+                .WithOne(u => u.Preferences)
+                .HasForeignKey<UserPreference>(p => p.UserId);
+
+            b.Entity<PokedexEntry>().HasKey(x => x.SpeciesId);
+            b.Entity<PokedexEntry>().Property(x => x.SpeciesId).ValueGeneratedNever();
+
+            b.Entity<PokedexPokemon>().HasKey(x => x.PokemonId);
+            b.Entity<PokedexPokemon>().Property(x => x.PokemonId).ValueGeneratedNever();
+            b.Entity<PokedexPokemon>().HasIndex(x => x.SpeciesId);
 
             b.Entity<FileEntity>().HasKey(x => x.Id);
             b.Entity<FileEntity>().HasIndex(x => new { x.UserId, x.Sha256 }).IsUnique();

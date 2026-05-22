@@ -22,3 +22,19 @@ public record MeResponse(int UserId, string Username, string Role);
 public record UpdatePasswordRequest(string? CurrentPassword, string NewPassword);
 
 public record AdminResetPasswordRequest(string NewPassword);
+
+public record RenameUserRequest(string NewUsername);
+
+public record UpdateRoleRequest(string Role);
+
+public record UserPreferencesDto(
+    string Theme,
+    string ViewMode,
+    string SpriteType,
+    string BackgroundType);
+
+public record UpdatePreferencesRequest(
+    string? Theme = null,
+    string? ViewMode = null,
+    string? SpriteType = null,
+    string? BackgroundType = null);

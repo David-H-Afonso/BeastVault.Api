@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using BeastVault.Api.Contracts;
+using BeastVault.Api.Domain.Entities;
 using BeastVault.Api.Helpers;
 using BeastVault.Api.Application.Interfaces;
 
@@ -48,6 +49,34 @@ public static class AuthEndpoints
             return success ? Results.Ok(new { message = "Password updated" }) : Results.BadRequest(new { message = "Invalid current password" });
         }).WithName("UpdatePassword");
 
+        // Rename own account
+        authed.MapPut("/username", async (RenameUserRequest request, HttpContext ctx, IAuthService authService) =>
+        {
+            var userId = ctx.GetUserId();
+            if (userId == null) return Results.Unauthorized();
+            var success = await authService.RenameUserAsync(userId.Value, request.NewUsername);
+            return success
+                ? Results.Ok(new { message = "Username updated" })
+                : Results.BadRequest(new { message = "Username already taken or invalid" });
+        }).WithName("UpdateOwnUsername");
+
+        // User preferences
+        authed.MapGet("/preferences", async (HttpContext ctx, IAuthService authService) =>
+        {
+            var userId = ctx.GetUserId();
+            if (userId == null) return Results.Unauthorized();
+            var prefs = await authService.GetPreferencesAsync(userId.Value);
+            return Results.Ok(prefs);
+        }).WithName("GetPreferences");
+
+        authed.MapPut("/preferences", async (UpdatePreferencesRequest request, HttpContext ctx, IAuthService authService) =>
+        {
+            var userId = ctx.GetUserId();
+            if (userId == null) return Results.Unauthorized();
+            var prefs = await authService.UpdatePreferencesAsync(userId.Value, request);
+            return Results.Ok(prefs);
+        }).WithName("UpdatePreferences");
+
         var admin = app.MapGroup("/auth/admin").WithTags("Auth").RequireAuthorization("AdminPolicy");
 
         admin.MapGet("/users", async (IAuthService authService) =>
@@ -67,5 +96,29 @@ public static class AuthEndpoints
             var success = await authService.AdminResetPasswordAsync(id, request.NewPassword);
             return success ? Results.Ok(new { message = "Password reset" }) : Results.NotFound();
         }).WithName("AdminResetPassword");
+
+        // Admin rename any user
+        admin.MapPut("/users/{id:int}/username", async (int id, RenameUserRequest request, IAuthService authService) =>
+        {
+            var success = await authService.RenameUserAsync(id, request.NewUsername);
+            return success
+                ? Results.Ok(new { message = "Username updated" })
+                : Results.BadRequest(new { message = "Username already taken or invalid" });
+        }).WithName("AdminRenameUser");
+
+        // Admin toggle role
+        admin.MapPut("/users/{id:int}/role", async (int id, UpdateRoleRequest request, HttpContext ctx, IAuthService authService) =>
+        {
+            var requestingUserId = ctx.GetUserId();
+            if (requestingUserId == null) return Results.Unauthorized();
+
+            if (!Enum.TryParse<UserRole>(request.Role, true, out var role))
+                return Results.BadRequest(new { message = "Invalid role. Use 'Admin' or 'Standard'" });
+
+            var success = await authService.UpdateRoleAsync(requestingUserId.Value, id, role);
+            return success
+                ? Results.Ok(new { message = "Role updated" })
+                : Results.BadRequest(new { message = "Cannot remove last admin" });
+        }).WithName("AdminUpdateRole");
     }
 }

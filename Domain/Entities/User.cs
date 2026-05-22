@@ -18,4 +18,5 @@ public class User
     public ICollection<FileEntity> Files { get; set; } = [];
     public ICollection<PokemonEntity> Pokemon { get; set; } = [];
     public ICollection<TagEntity> Tags { get; set; } = [];
+    public UserPreference? Preferences { get; set; }
 }

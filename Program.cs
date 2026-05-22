@@ -98,6 +98,14 @@ builder.Services.AddAuthorization(options =>
 // Auth service
 builder.Services.AddScoped<IAuthService, AuthService>();
 
+// Pokedex service + HttpClient for PokeAPI
+builder.Services.AddScoped<IPokedexService, PokedexService>();
+builder.Services.AddHttpClient("PokeApi", client =>
+{
+    client.DefaultRequestHeaders.Add("User-Agent", "BeastVault/1.0");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+
 // CORS — read comma-separated origins from CORS_ALLOWED_ORIGINS env var
 var corsOriginsRaw = Environment.GetEnvironmentVariable("CORS_ALLOWED_ORIGINS");
 if (!string.IsNullOrWhiteSpace(corsOriginsRaw))
@@ -169,6 +177,7 @@ app.MapFilesEndpoints();
 app.MapScanEndpoints();
 app.MapMaintenanceEndpoints();
 app.MapConfigurationEndpoints();
+app.MapPokedexEndpoints();
 
 // Asegurar que exista la carpeta de almacenamiento y la BD
 using (var scope = app.Services.CreateScope())
@@ -262,7 +271,82 @@ using (var scope = app.Services.CreateScope())
             try { await cmd.ExecuteNonQueryAsync(); } catch { /* may not exist */ }
         }
 
-        // 5. Mark ALL migrations as applied so future MigrateAsync() skips them
+        // 5. Create new tables from AddPreferencesAndPokedexCache migration
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = @"CREATE TABLE IF NOT EXISTS ""UserPreferences"" (
+                ""UserId"" INTEGER NOT NULL CONSTRAINT ""PK_UserPreferences"" PRIMARY KEY,
+                ""Theme"" TEXT NOT NULL DEFAULT 'dark',
+                ""ViewMode"" TEXT NOT NULL DEFAULT 'grid',
+                ""SpriteType"" TEXT NOT NULL DEFAULT 'sprites',
+                ""BackgroundType"" TEXT NOT NULL DEFAULT 'diagonal-45',
+                CONSTRAINT ""FK_UserPreferences_Users_UserId"" FOREIGN KEY (""UserId"") REFERENCES ""Users"" (""Id"") ON DELETE CASCADE
+            )";
+            await cmd.ExecuteNonQueryAsync();
+            Console.WriteLine("  ✅ UserPreferences table ensured");
+        }
+
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = @"CREATE TABLE IF NOT EXISTS ""PokedexEntries"" (
+                ""SpeciesId"" INTEGER NOT NULL CONSTRAINT ""PK_PokedexEntries"" PRIMARY KEY,
+                ""Name"" TEXT NOT NULL DEFAULT '',
+                ""LocalizedNames"" TEXT NOT NULL DEFAULT '{}',
+                ""Genus"" TEXT NOT NULL DEFAULT '',
+                ""FlavorText"" TEXT NOT NULL DEFAULT '',
+                ""Generation"" INTEGER NOT NULL DEFAULT 0,
+                ""Color"" TEXT NOT NULL DEFAULT '',
+                ""Shape"" TEXT NOT NULL DEFAULT '',
+                ""Habitat"" TEXT NOT NULL DEFAULT '',
+                ""GrowthRate"" TEXT NOT NULL DEFAULT '',
+                ""CaptureRate"" INTEGER NOT NULL DEFAULT 0,
+                ""BaseHappiness"" INTEGER NOT NULL DEFAULT 0,
+                ""HatchCounter"" INTEGER NOT NULL DEFAULT 0,
+                ""GenderRate"" INTEGER NOT NULL DEFAULT 0,
+                ""IsLegendary"" INTEGER NOT NULL DEFAULT 0,
+                ""IsMythical"" INTEGER NOT NULL DEFAULT 0,
+                ""IsBaby"" INTEGER NOT NULL DEFAULT 0,
+                ""HasGenderDifferences"" INTEGER NOT NULL DEFAULT 0,
+                ""FormsSwitchable"" INTEGER NOT NULL DEFAULT 0,
+                ""EggGroups"" TEXT NOT NULL DEFAULT '[]',
+                ""Varieties"" TEXT NOT NULL DEFAULT '[]',
+                ""EvolutionChainUrl"" TEXT NOT NULL DEFAULT '',
+                ""CachedAt"" TEXT NOT NULL DEFAULT '2026-01-01T00:00:00Z'
+            )";
+            await cmd.ExecuteNonQueryAsync();
+            Console.WriteLine("  ✅ PokedexEntries table ensured");
+        }
+
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = @"CREATE TABLE IF NOT EXISTS ""PokedexPokemon"" (
+                ""PokemonId"" INTEGER NOT NULL CONSTRAINT ""PK_PokedexPokemon"" PRIMARY KEY,
+                ""SpeciesId"" INTEGER NOT NULL DEFAULT 0,
+                ""Name"" TEXT NOT NULL DEFAULT '',
+                ""Height"" INTEGER NOT NULL DEFAULT 0,
+                ""Weight"" INTEGER NOT NULL DEFAULT 0,
+                ""BaseExperience"" INTEGER NOT NULL DEFAULT 0,
+                ""Order"" INTEGER NOT NULL DEFAULT 0,
+                ""IsDefault"" INTEGER NOT NULL DEFAULT 0,
+                ""Types"" TEXT NOT NULL DEFAULT '[]',
+                ""Abilities"" TEXT NOT NULL DEFAULT '[]',
+                ""BaseStats"" TEXT NOT NULL DEFAULT '{}',
+                ""Sprites"" TEXT NOT NULL DEFAULT '{}',
+                ""Cries"" TEXT NOT NULL DEFAULT '{}',
+                ""GameIndices"" TEXT NOT NULL DEFAULT '[]',
+                ""CachedAt"" TEXT NOT NULL DEFAULT '2026-01-01T00:00:00Z'
+            )";
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = @"CREATE INDEX IF NOT EXISTS ""IX_PokedexPokemon_SpeciesId"" ON ""PokedexPokemon"" (""SpeciesId"")";
+            await cmd.ExecuteNonQueryAsync();
+            Console.WriteLine("  ✅ PokedexPokemon table ensured");
+        }
+
+        // 6. Mark ALL migrations as applied so future MigrateAsync() skips them
         using (var cmd = conn.CreateCommand())
         {
             cmd.CommandText = @"CREATE TABLE IF NOT EXISTS ""__EFMigrationsHistory"" (
@@ -273,7 +357,8 @@ using (var scope = app.Services.CreateScope())
         foreach (var mig in new[] {
             "20250910204519_InitialCreate",
             "20250912122823_EnsureTagsTableExists",
-            "20260521134147_AddUserAndMultiUserSupport" })
+            "20260521134147_AddUserAndMultiUserSupport",
+            "20260522173522_AddPreferencesAndPokedexCache" })
         {
             using var cmd = conn.CreateCommand();
             cmd.CommandText = $@"INSERT OR IGNORE INTO ""__EFMigrationsHistory"" (""MigrationId"", ""ProductVersion"") VALUES ('{mig}', '9.0.8')";
