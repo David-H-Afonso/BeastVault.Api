@@ -20,3 +20,5 @@ public record UserDto(
 public record MeResponse(int UserId, string Username, string Role);
 
 public record UpdatePasswordRequest(string? CurrentPassword, string NewPassword);
+
+public record AdminResetPasswordRequest(string NewPassword);

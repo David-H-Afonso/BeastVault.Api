@@ -10,6 +10,7 @@ public interface IAuthService
     Task<List<UserDto>> GetAllUsersAsync();
     Task<bool> DeleteUserAsync(int id);
     Task<bool> UpdatePasswordAsync(int userId, string? currentPassword, string newPassword);
+    Task<bool> AdminResetPasswordAsync(int userId, string newPassword);
     string HashPassword(string password);
     bool VerifyPassword(string password, string hash);
 }

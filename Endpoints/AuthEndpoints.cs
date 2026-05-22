@@ -20,9 +20,13 @@ public static class AuthEndpoints
         anon.MapPost("/register", async (RegisterRequest request, IAuthService authService) =>
         {
             var user = await authService.CreateUserAsync(request.Username, request.Password);
-            return user == null
-                ? Results.Conflict(new { message = "Username already exists" })
-                : Results.Ok(new { message = "User created", userId = user.Id });
+            if (user == null)
+                return Results.Conflict(new { message = "Username already exists" });
+
+            var loginResponse = await authService.LoginAsync(request.Username, request.Password);
+            return loginResponse == null
+                ? Results.StatusCode(500)
+                : Results.Ok(loginResponse);
         }).WithName("Register");
 
         var authed = app.MapGroup("/auth").WithTags("Auth").RequireAuthorization();
@@ -57,5 +61,11 @@ public static class AuthEndpoints
             var success = await authService.DeleteUserAsync(id);
             return success ? Results.NoContent() : Results.NotFound();
         }).WithName("DeleteUser");
+
+        admin.MapPut("/users/{id:int}/password", async (int id, AdminResetPasswordRequest request, IAuthService authService) =>
+        {
+            var success = await authService.AdminResetPasswordAsync(id, request.NewPassword);
+            return success ? Results.Ok(new { message = "Password reset" }) : Results.NotFound();
+        }).WithName("AdminResetPassword");
     }
 }

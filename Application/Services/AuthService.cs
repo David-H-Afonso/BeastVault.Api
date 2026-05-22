@@ -97,6 +97,16 @@ public class AuthService : IAuthService
         return true;
     }
 
+    public async Task<bool> AdminResetPasswordAsync(int userId, string newPassword)
+    {
+        var user = await _context.Users.FindAsync(userId);
+        if (user == null) return false;
+
+        user.PasswordHash = HashPassword(newPassword);
+        await _context.SaveChangesAsync();
+        return true;
+    }
+
     public string HashPassword(string password) =>
         BCrypt.Net.BCrypt.HashPassword(password, workFactor: 12);
 
