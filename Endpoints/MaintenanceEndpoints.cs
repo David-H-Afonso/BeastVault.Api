@@ -370,7 +370,8 @@ namespace BeastVault.Api.Endpoints
                                             var ext = Path.GetExtension(physicalFile);
                                             try
                                             {
-                                                storage.DeleteBackup(fileName, ext);
+                                                // Maintenance: use direct File.Delete for physical file cleanup
+                                                File.Delete(physicalFile);
                                             }
                                             catch (Exception)
                                             {

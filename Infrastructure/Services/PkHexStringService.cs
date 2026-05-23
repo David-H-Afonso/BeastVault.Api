@@ -231,7 +231,50 @@ namespace BeastVault.Api.Infrastructure.Services
                 "KOR" => "Korean",
                 "CHS" => "Chinese (Simplified)",
                 "CHT" => "Chinese (Traditional)",
-                _ => code
+                "UNK" => "Unknown",
+                _ => string.IsNullOrEmpty(code) ? "Unknown" : code
+            };
+        }
+
+        /// <summary>
+        /// Get the stat boosted (+10%) by a nature. Returns null for neutral natures.
+        /// Nature ID = (boosted_stat * 5) + reduced_stat
+        /// Stats: 0=Atk, 1=Def, 2=Spe, 3=SpA, 4=SpD
+        /// </summary>
+        public static string? GetNatureBoostedStat(int natureId)
+        {
+            if (natureId < 0 || natureId > 24) return null;
+            var boosted = natureId / 5;
+            var reduced = natureId % 5;
+            if (boosted == reduced) return null; // neutral nature
+            return boosted switch
+            {
+                0 => "Atk",
+                1 => "Def",
+                2 => "Spe",
+                3 => "SpA",
+                4 => "SpD",
+                _ => null
+            };
+        }
+
+        /// <summary>
+        /// Get the stat reduced (-10%) by a nature. Returns null for neutral natures.
+        /// </summary>
+        public static string? GetNatureReducedStat(int natureId)
+        {
+            if (natureId < 0 || natureId > 24) return null;
+            var boosted = natureId / 5;
+            var reduced = natureId % 5;
+            if (boosted == reduced) return null; // neutral nature
+            return reduced switch
+            {
+                0 => "Atk",
+                1 => "Def",
+                2 => "Spe",
+                3 => "SpA",
+                4 => "SpD",
+                _ => null
             };
         }
     }

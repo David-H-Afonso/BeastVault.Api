@@ -33,7 +33,7 @@ namespace BeastVault.Api.Endpoints
                     // Log to verify we save the original bytes
                     Console.WriteLine($"Original file: {f.FileName}, Size: {bytes.Length} bytes, SHA256: {FileStorageService.ComputeSha256(bytes)}");
 
-                    var parse = await parser.ParseAsync(bytes, f.FileName, storage);
+                    var parse = await parser.ParseAsync(bytes, f.FileName, storage, userId.Value);
                     if (parse is null)
                     {
                         imported.Add(new { FileName = f.FileName, Status = "error", Message = "Could not parse file" });

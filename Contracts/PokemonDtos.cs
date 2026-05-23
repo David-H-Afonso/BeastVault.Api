@@ -98,6 +98,9 @@ public record PokemonDetailDto
     public string HeldItemName { get; init; } = "";
     public string OtGenderName { get; init; } = "";
     public string OtLanguageName { get; init; } = "";
+    public string? NatureBoostedStat { get; init; }
+    public string? NatureReducedStat { get; init; }
+    public int OriginGeneration { get; init; }
 
     public uint EncryptionConstant { get; init; }
     public uint PersonalityId { get; init; }
@@ -130,7 +133,7 @@ public record PokemonDetailDto
     public IReadOnlyList<MoveDto> Moves { get; init; } = Array.Empty<MoveDto>();
     public IReadOnlyList<RelearnMoveDto> RelearnMoves { get; init; } = Array.Empty<RelearnMoveDto>();
 
-    public PokemonDetailDto(PokemonEntity p, StatsEntity? s, List<MoveEntity> moves, List<RelearnMoveEntity> relearnMoves)
+    public PokemonDetailDto(PokemonEntity p, StatsEntity? s, List<MoveEntity> moves, List<RelearnMoveEntity> relearnMoves, string fileFormat = "")
     {
         Id = p.Id;
         SpeciesId = p.SpeciesId;
@@ -164,6 +167,11 @@ public record PokemonDetailDto
         HeldItemName = p.HeldItemId > 0 ? PkHexStringService.GetItemName(p.HeldItemId) : "";
         OtGenderName = p.OTGender switch { 0 => "Male", 1 => "Female", _ => "Unknown" };
         OtLanguageName = PkHexStringService.GetLanguageFullName(p.OTLanguage);
+        NatureBoostedStat = PkHexStringService.GetNatureBoostedStat(p.Nature);
+        NatureReducedStat = PkHexStringService.GetNatureReducedStat(p.Nature);
+        OriginGeneration = !string.IsNullOrEmpty(fileFormat)
+            ? PokemonGameInfoService.GetCapturedGeneration(p.OriginGame, fileFormat)
+            : PokemonGameInfoService.GetSpeciesOriginGeneration(p.SpeciesId);
 
         EncryptionConstant = p.EncryptionConstant;
         PersonalityId = p.PersonalityId;

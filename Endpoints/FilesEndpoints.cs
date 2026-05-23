@@ -140,7 +140,7 @@ namespace BeastVault.Api.Endpoints
                 try
                 {
                     // Get backup file path
-                    var backupPath = storage.GetBackupPath(fileName, originalExt, importDate);
+                    var backupPath = storage.GetBackupPath(fileName, originalExt, pokemon.File.UserId, importDate);
 
                     if (!File.Exists(backupPath))
                         return Results.NotFound("Backup file not found");

@@ -21,10 +21,49 @@ namespace BeastVault.Api.Infrastructure.Services
             _backupPath = storageConfig.BackupDirectory;
         }
 
+        /// <summary>
+        /// Get the user-specific storage directory: {basePath}/{userId}/
+        /// </summary>
+        public string GetUserBasePath(int userId) => Path.Combine(_basePath, userId.ToString());
+
+        /// <summary>
+        /// Get the user-specific backup directory: {basePath}/{userId}/backup/
+        /// </summary>
+        public string GetUserBackupPath(int userId) => Path.Combine(GetUserBasePath(userId), "backup");
+
         public void EnsureVault()
         {
             Directory.CreateDirectory(_basePath);
-            Directory.CreateDirectory(_backupPath);
+            // Don't create global backup — backups are per-user now
+        }
+
+        /// <summary>
+        /// Ensures the user-specific directories exist
+        /// </summary>
+        public void EnsureUserVault(int userId)
+        {
+            var userPath = GetUserBasePath(userId);
+            var userBackupPath = GetUserBackupPath(userId);
+            Directory.CreateDirectory(userPath);
+            Directory.CreateDirectory(userBackupPath);
+            Console.WriteLine($"Ensured user vault: {userPath}");
+        }
+
+        /// <summary>
+        /// Get all user IDs that have folders under the base path
+        /// </summary>
+        public List<int> GetExistingUserIds()
+        {
+            var userIds = new List<int>();
+            if (!Directory.Exists(_basePath)) return userIds;
+
+            foreach (var dir in Directory.GetDirectories(_basePath))
+            {
+                var dirName = Path.GetFileName(dir);
+                if (int.TryParse(dirName, out var userId))
+                    userIds.Add(userId);
+            }
+            return userIds;
         }
 
         public static string ComputeSha256(byte[] bytes)
@@ -34,43 +73,43 @@ namespace BeastVault.Api.Infrastructure.Services
             return Convert.ToHexString(hash).ToLowerInvariant();
         }
 
-
-        public string Save(string sha256, string ext, byte[] bytes, string? pokemonName = null, DateTime? importDate = null, string? originalFileName = null)
+        public string Save(string sha256, string ext, byte[] bytes, int userId, string? pokemonName = null, DateTime? importDate = null, string? originalFileName = null)
         {
-            // Guardar archivo principal directamente en la raíz de BeastVault para consistencia
             ext = ext.TrimStart('.').ToLowerInvariant();
             var safeName = string.IsNullOrWhiteSpace(pokemonName) ? "pokemon" : SanitizeFileName(pokemonName);
             var shortHash = sha256.Length > 8 ? sha256[..8] : sha256;
 
-            // Guardar directamente en la raíz de BeastVault
-            var filePath = Path.Combine(_basePath, $"{safeName}_{shortHash}.{ext}");
+            // Save to user-specific directory: {basePath}/{userId}/
+            var userPath = GetUserBasePath(userId);
+            Directory.CreateDirectory(userPath);
+
+            var filePath = Path.Combine(userPath, $"{safeName}_{shortHash}.{ext}");
             File.WriteAllBytes(filePath, bytes);
 
-            // NUEVO: Guardar backup original si se proporciona el nombre original
+            // Save backup in user-specific backup folder
             if (!string.IsNullOrWhiteSpace(originalFileName))
             {
-                SaveBackup(originalFileName, ext, bytes, importDate);
+                SaveBackup(originalFileName, ext, bytes, userId, importDate);
             }
 
             return filePath;
         }
 
-        public string SaveBackup(string originalFileName, string ext, byte[] bytes, DateTime? importDate = null)
+        public string SaveBackup(string originalFileName, string ext, byte[] bytes, int userId, DateTime? importDate = null)
         {
-            // Normalize extension handling for all PKHeX formats
             ext = ext.TrimStart('.').ToLowerInvariant();
 
-            // Recognize all PKHeX formats including pa8 (Legends Arceus), pa9 (Legends Z-A) and pb9 (Pokemon Box Gen 9)
             var validExtensions = new[] { "pk1", "pk2", "pk3", "pk4", "pk5", "pk6", "pk7", "pk8", "pk9", "pb7", "pb8", "pb9", "pa8", "pa9" };
             if (!validExtensions.Contains(ext))
             {
                 Console.WriteLine($"Warning: Unrecognized PKM format: {ext}");
             }
 
-            // Create backup structure: backup/{format}/{year}/
+            // Create backup structure: {basePath}/{userId}/backup/{format}/{year}/
             var year = (importDate ?? DateTime.Now).Year.ToString();
             var formatFolder = ext;
-            var backupDir = Path.Combine(_backupPath, formatFolder, year);
+            var userBackupPath = GetUserBackupPath(userId);
+            var backupDir = Path.Combine(userBackupPath, formatFolder, year);
 
             Directory.CreateDirectory(backupDir);
 
@@ -94,11 +133,9 @@ namespace BeastVault.Api.Infrastructure.Services
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Error checking existing backup file {existingFile}: {ex.Message}");
-                    // Continue checking other files
                 }
             }
 
-            // No duplicate backup exists, create new one
             var backupFilePath = Path.Combine(backupDir, originalFileName);
             File.WriteAllBytes(backupFilePath, bytes);
 
@@ -127,13 +164,14 @@ namespace BeastVault.Api.Infrastructure.Services
             }
         }
 
-        public void DeleteBackup(string originalFileName, string ext, DateTime? importDate = null)
+        public void DeleteBackup(string originalFileName, string ext, int userId, DateTime? importDate = null)
         {
             try
             {
                 var year = (importDate ?? DateTime.Now).Year.ToString();
                 var formatFolder = ext.TrimStart('.').ToLowerInvariant();
-                var backupFilePath = Path.Combine(_backupPath, formatFolder, year, originalFileName);
+                var userBackupPath = GetUserBackupPath(userId);
+                var backupFilePath = Path.Combine(userBackupPath, formatFolder, year, originalFileName);
 
                 if (File.Exists(backupFilePath))
                 {
@@ -162,13 +200,14 @@ namespace BeastVault.Api.Infrastructure.Services
         public byte[] Read(string path) => File.ReadAllBytes(path);
 
         /// <summary>
-        /// Construye la ruta donde debería estar el archivo de backup
+        /// Get the path where a user's backup file should be
         /// </summary>
-        public string GetBackupPath(string originalFileName, string ext, DateTime? importDate = null)
+        public string GetBackupPath(string originalFileName, string ext, int userId, DateTime? importDate = null)
         {
             var year = (importDate ?? DateTime.Now).Year.ToString();
             var formatFolder = ext.TrimStart('.').ToLowerInvariant();
-            var backupDir = Path.Combine(_backupPath, formatFolder, year);
+            var userBackupPath = GetUserBackupPath(userId);
+            var backupDir = Path.Combine(userBackupPath, formatFolder, year);
             return Path.Combine(backupDir, originalFileName);
         }
     }

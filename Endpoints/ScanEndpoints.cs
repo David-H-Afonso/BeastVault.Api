@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using BeastVault.Api.Infrastructure.Services;
+using BeastVault.Api.Helpers;
 
 namespace BeastVault.Api.Endpoints
 {
@@ -34,11 +35,20 @@ Supported file formats:
         }
 
         private static async Task<IResult> ScanDirectory(
-            [FromServices] FileWatcherService fileWatcher)
+            [FromServices] FileWatcherService fileWatcher,
+            [FromServices] FileStorageService storage,
+            HttpContext ctx)
         {
             try
             {
-                var result = await fileWatcher.ScanAndImportNewFilesAsync();
+                var userId = ctx.GetUserId();
+                if (userId == null) return Results.Unauthorized();
+
+                // Ensure user's directory exists
+                storage.EnsureUserVault(userId.Value);
+
+                // Scan only the current user's directory
+                var result = await fileWatcher.ScanUserDirectoryAsync(userId.Value);
 
                 return Results.Ok(new
                 {

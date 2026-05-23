@@ -33,7 +33,7 @@ namespace BeastVault.Api.Infrastructure.Services
             return pk.SID16;
         }
 
-        public async Task<ParseResult?> ParseAsync(byte[] bytes, string fileName, FileStorageService? storageService = null)
+        public async Task<ParseResult?> ParseAsync(byte[] bytes, string fileName, FileStorageService? storageService = null, int userId = 0)
         {
             return await Task.Run(() =>
             {
@@ -282,7 +282,7 @@ namespace BeastVault.Api.Infrastructure.Services
                 {
                     var pokemonName = PkHexStringService.GetSpeciesName(pk.Species) ?? "Pokemon";
                     // NUEVO: Pasar el nombre del archivo original para el backup
-                    var storedPath = storageService.Save(sha, ext, bytes, pokemonName, DateTime.UtcNow, fileName);
+                    var storedPath = storageService.Save(sha, ext, bytes, userId, pokemonName, DateTime.UtcNow, fileName);
                     file.StoredPath = storedPath;
                     Console.WriteLine($"Saved file: {storedPath}, Size: {bytes.Length} bytes, SHA256: {sha}");
 

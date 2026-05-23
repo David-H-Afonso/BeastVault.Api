@@ -95,12 +95,6 @@ public class PokemonService : IPokemonService
             .Where(p => neededPokemonIds.Contains(p.PokemonId))
             .ToDictionaryAsync(p => p.PokemonId);
 
-        // Batch-load ball items from PokedexItems for sprite URLs
-        var uniqueBallIds = items.Select(i => i.BallId).Where(b => b > 0).Distinct().ToList();
-        var cachedBallItems = await _db.PokedexItems
-            .Where(i => uniqueBallIds.Contains(i.ItemId))
-            .ToDictionaryAsync(i => i.ItemId);
-
         var resultItems = items.Select(item =>
         {
             string formName = PkHexStringService.GetFormName(item.SpeciesId, item.Form);
@@ -132,9 +126,7 @@ public class PokemonService : IPokemonService
             var (type1, type2) = ExtractTypes(cachedPokemon);
             var sprites = BuildSpritesDto(cachedPokemon, cachedSpecies);
             var ballName = PkHexStringService.GetBallName(item.BallId);
-            var ballSpriteUrl = cachedBallItems.TryGetValue(item.BallId, out var cachedBall) && !string.IsNullOrEmpty(cachedBall.SpriteUrl)
-                ? cachedBall.SpriteUrl
-                : BuildBallSpriteUrl(ballName);
+            var ballSpriteUrl = BuildBallSpriteUrl(item.BallId, ballName);
 
             return new PokemonListItemDto
             {
@@ -295,10 +287,28 @@ public class PokemonService : IPokemonService
     }
 
     /// <summary>
-    /// Builds a Pokéball sprite URL from the ball name.
+    /// Builds a Pokéball sprite URL from the ball ID and name.
+    /// PKHeX Ball enum values 27-36 are Legends Arceus balls which use "la-" prefix in PokeAPI.
     /// </summary>
-    private static string BuildBallSpriteUrl(string ballName)
+    private static readonly Dictionary<int, string> _ballSpriteOverrides = new()
     {
+        { 27, "la-poke-ball" },
+        { 28, "la-great-ball" },
+        { 29, "la-ultra-ball" },
+        { 30, "la-feather-ball" },
+        { 31, "la-wing-ball" },
+        { 32, "la-jet-ball" },
+        { 33, "la-heavy-ball" },
+        { 34, "la-leaden-ball" },
+        { 35, "la-gigaton-ball" },
+        { 36, "la-origin-ball" },
+    };
+
+    private static string BuildBallSpriteUrl(int ballId, string ballName)
+    {
+        if (_ballSpriteOverrides.TryGetValue(ballId, out var overrideSlug))
+            return $"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/{overrideSlug}.png";
+
         if (string.IsNullOrEmpty(ballName) || ballName == "Unknown") return "";
 
         // Convert "Poké Ball" → "poke-ball", "Beast Ball" → "beast-ball", etc.
@@ -317,11 +327,12 @@ public class PokemonService : IPokemonService
         var p = await _db.Pokemon.AsNoTracking().FirstOrDefaultAsync(x => x.Id == pokemonId && x.UserId == userId);
         if (p == null) return null;
 
+        var file = await _db.Files.AsNoTracking().FirstOrDefaultAsync(f => f.Id == p.FileId);
         var stats = await _db.Stats.AsNoTracking().FirstOrDefaultAsync(x => x.PokemonId == p.Id);
         var moves = await _db.Moves.AsNoTracking().Where(x => x.PokemonId == p.Id).OrderBy(x => x.Slot).ToListAsync();
         var relearnMoves = await _db.RelearnMoves.AsNoTracking().Where(x => x.PokemonId == p.Id).OrderBy(x => x.Slot).ToListAsync();
 
-        return new PokemonDetailDto(p, stats, moves, relearnMoves);
+        return new PokemonDetailDto(p, stats, moves, relearnMoves, file?.Format ?? "");
     }
 
     public async Task<string?> GetShowdownExportAsync(int userId, int pokemonId)
@@ -410,7 +421,7 @@ public class PokemonService : IPokemonService
                 try
                 {
                     var ext = Path.GetExtension(file.OriginalFileName);
-                    _storage.DeleteBackup(file.OriginalFileName, ext);
+                    _storage.DeleteBackup(file.OriginalFileName, ext, userId);
                     backupDeleted = true;
                 }
                 catch (Exception ex) { Console.WriteLine($"Could not delete backup file {file.OriginalFileName}: {ex.Message}"); }

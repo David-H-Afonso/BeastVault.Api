@@ -41,7 +41,7 @@ namespace BeastVault.Api.Endpoints
                         try
                         {
                             var ext = Path.GetExtension(file.OriginalFileName);
-                            storage.DeleteBackup(file.OriginalFileName, ext);
+                            storage.DeleteBackup(file.OriginalFileName, ext, file.UserId);
                             deletedBackups++;
                         }
                         catch (Exception ex)
