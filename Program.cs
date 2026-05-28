@@ -426,6 +426,24 @@ using (var scope = app.Services.CreateScope())
         await EnsureColumnAsync("PokedexItems", "SpriteLocalPath", "TEXT");
         await EnsureColumnAsync("PokedexEntries", "EvolutionChainId", "INTEGER");
 
+        // Backfill EvolutionChainId from EvolutionChainUrl for entries populated before the column existed
+        using (var cmd = patchConn.CreateCommand())
+        {
+            cmd.CommandText = @"
+                UPDATE ""PokedexEntries""
+                SET ""EvolutionChainId"" = CAST(
+                    SUBSTR(
+                        RTRIM(""EvolutionChainUrl"", '/'),
+                        INSTR(RTRIM(""EvolutionChainUrl"", '/'), '/api/v2/evolution-chain/') + LENGTH('/api/v2/evolution-chain/')
+                    ) AS INTEGER)
+                WHERE ""EvolutionChainId"" IS NULL
+                  AND ""EvolutionChainUrl"" != ''
+                  AND ""EvolutionChainUrl"" LIKE '%/evolution-chain/%'";
+            var updated = await cmd.ExecuteNonQueryAsync();
+            if (updated > 0)
+                Console.WriteLine($"  ✅ Backfilled EvolutionChainId for {updated} species entries");
+        }
+
         // Sprite blob columns for PokedexPokemon
         await EnsureColumnAsync("PokedexPokemon", "SpriteData", "BLOB");
         await EnsureColumnAsync("PokedexPokemon", "ArtworkData", "BLOB");

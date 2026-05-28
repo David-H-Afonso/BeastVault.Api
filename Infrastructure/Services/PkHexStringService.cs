@@ -166,15 +166,59 @@ namespace BeastVault.Api.Infrastructure.Services
         {
             if (versionId <= 0) return "Unknown";
 
-            try
+            return versionId switch
             {
-                // Simple fallback for version names
-                return $"Version#{versionId}";
-            }
-            catch
-            {
-                return $"Version#{versionId}";
-            }
+                // Gen 1
+                1 => "Red",
+                2 => "Blue",
+                3 => "Yellow",
+                // Gen 2
+                20 => "Gold",
+                21 => "Silver",
+                22 => "Crystal",
+                // Gen 3
+                30 => "Ruby",
+                31 => "Sapphire",
+                35 => "Emerald",
+                36 => "FireRed",
+                37 => "LeafGreen",
+                // Gen 4
+                40 => "HeartGold",
+                41 => "SoulSilver",
+                42 => "Diamond",
+                43 => "Pearl",
+                44 => "Platinum",
+                // Gen 5
+                50 => "Black",
+                51 => "White",
+                52 => "Black 2",
+                53 => "White 2",
+                // Gen 6
+                54 => "X",
+                55 => "Y",
+                57 => "Omega Ruby",
+                58 => "Alpha Sapphire",
+                // Gen 7
+                59 => "Sun",
+                60 => "Moon",
+                61 => "Ultra Sun",
+                62 => "Ultra Moon",
+                // Gen 7 Let's Go
+                63 => "Let's Go Pikachu",
+                64 => "Let's Go Eevee",
+                // Gen 8
+                68 => "Sword",
+                69 => "Shield",
+                // Gen 8 BDSP
+                72 => "Brilliant Diamond",
+                73 => "Shining Pearl",
+                // Gen 8 Legends
+                74 => "Legends: Arceus",
+                // Gen 9
+                75 => "Scarlet",
+                76 => "Violet",
+                _ => $"Version #{versionId}"
+            };
         }
 
         /// <summary>
