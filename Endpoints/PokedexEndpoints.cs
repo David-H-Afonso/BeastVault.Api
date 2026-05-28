@@ -1,7 +1,6 @@
 using BeastVault.Api.Application.Interfaces;
 using BeastVault.Api.Application.Services;
 using BeastVault.Api.Contracts;
-
 namespace BeastVault.Api.Endpoints;
 
 public static class PokedexEndpoints
@@ -157,6 +156,162 @@ public static class PokedexEndpoints
         .WithSummary("Get cached item data")
         .RequireAuthorization();
 
+        // Admin: download sprites to local disk (fire-and-forget, poll /pokedex/sprites-status)
+        pokedex.MapPost("/download-sprites", (IServiceScopeFactory scopeFactory) =>
+        {
+            if (ImageCacheService.IsDownloading)
+                return Results.Conflict(new { message = "Sprite download is already in progress. Check /pokedex/sprites-status." });
+
+            _ = Task.Run(async () =>
+            {
+                using var scope = scopeFactory.CreateScope();
+                var svc = scope.ServiceProvider.GetRequiredService<ImageCacheService>();
+                try
+                {
+                    await svc.DownloadAllSpritesAsync();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Background sprite download error: {ex.Message}");
+                }
+            });
+
+            return Results.Accepted(value: new { message = "Sprite download started. Poll /pokedex/sprites-status for progress." });
+        })
+        .WithName("DownloadSprites")
+        .WithSummary("Download all Pokémon and item sprites to local disk (admin only)")
+        .RequireAuthorization("AdminPolicy");
+
+        // Admin: sprite download status
+        pokedex.MapGet("/sprites-status", async (IPokedexService pokedexService) =>
+        {
+            var status = await pokedexService.GetSpriteDownloadStatusAsync();
+            return Results.Ok(status);
+        })
+        .WithName("GetSpriteDownloadStatus")
+        .WithSummary("Get status of local sprite cache")
+        .RequireAuthorization();
+
+        // ── Abilities ──────────────────────────────────────────────────────
+
+        pokedex.MapGet("/ability/{abilityId:int}", async (int abilityId, IPokedexService svc) =>
+        {
+            var result = await svc.GetAbilityAsync(abilityId);
+            return result is not null ? Results.Ok(result) : Results.NotFound();
+        })
+        .WithName("GetPokedexAbility")
+        .WithSummary("Get cached ability data")
+        .RequireAuthorization();
+
+        pokedex.MapPost("/populate-abilities", (PopulateAbilitiesRequest request, IServiceScopeFactory scopeFactory) =>
+        {
+            var startId = request.StartId ?? 1;
+            var endId = request.EndId ?? 307;
+
+            if (startId < 1 || endId < startId || endId > 10000)
+                return Results.BadRequest(new { message = "Invalid range." });
+
+            if (PokedexService.IsPopulatingAbilities)
+                return Results.Conflict(new { message = "Ability population is already in progress. Check /pokedex/status for progress." });
+
+            _ = Task.Run(async () =>
+            {
+                using var scope = scopeFactory.CreateScope();
+                var service = scope.ServiceProvider.GetRequiredService<IPokedexService>();
+                try { await service.PopulateAbilitiesAsync(startId, endId); }
+                catch (Exception ex) { Console.WriteLine($"Background ability populate error: {ex.Message}"); }
+            });
+
+            return Results.Accepted(value: new { message = $"Ability population started for {startId}-{endId}." });
+        })
+        .WithName("PopulateAbilities")
+        .WithSummary("Populate ability cache from PokeAPI (admin only)")
+        .RequireAuthorization("AdminPolicy");
+
+        // ── Types ──────────────────────────────────────────────────────────
+
+        pokedex.MapGet("/type/{typeId:int}", async (int typeId, IPokedexService svc) =>
+        {
+            var result = await svc.GetTypeAsync(typeId);
+            return result is not null ? Results.Ok(result) : Results.NotFound();
+        })
+        .WithName("GetPokedexType")
+        .WithSummary("Get cached type with damage relations")
+        .RequireAuthorization();
+
+        pokedex.MapGet("/types", async (IPokedexService svc) =>
+        {
+            var types = await svc.GetAllTypesAsync();
+            return Results.Ok(types);
+        })
+        .WithName("GetAllPokedexTypes")
+        .WithSummary("Get all cached types")
+        .RequireAuthorization();
+
+        pokedex.MapPost("/populate-types", (IServiceScopeFactory scopeFactory) =>
+        {
+            if (PokedexService.IsPopulatingTypes)
+                return Results.Conflict(new { message = "Type population is already in progress." });
+
+            _ = Task.Run(async () =>
+            {
+                using var scope = scopeFactory.CreateScope();
+                var service = scope.ServiceProvider.GetRequiredService<IPokedexService>();
+                try { await service.PopulateTypesAsync(); }
+                catch (Exception ex) { Console.WriteLine($"Background type populate error: {ex.Message}"); }
+            });
+
+            return Results.Accepted(value: new { message = "Type population started (18 types)." });
+        })
+        .WithName("PopulateTypes")
+        .WithSummary("Populate type cache from PokeAPI (admin only)")
+        .RequireAuthorization("AdminPolicy");
+
+        // ── Evolution Chains ──────────────────────────────────────────────
+
+        pokedex.MapGet("/evolution-chain/{chainId:int}", async (int chainId, IPokedexService svc) =>
+        {
+            var result = await svc.GetEvolutionChainAsync(chainId);
+            return result is not null ? Results.Ok(result) : Results.NotFound();
+        })
+        .WithName("GetEvolutionChain")
+        .WithSummary("Get cached evolution chain JSON")
+        .RequireAuthorization();
+
+        pokedex.MapGet("/species/{speciesId:int}/evolution-chain", async (int speciesId, IPokedexService svc) =>
+        {
+            var result = await svc.GetEvolutionChainBySpeciesAsync(speciesId);
+            return result is not null ? Results.Ok(result) : Results.NotFound();
+        })
+        .WithName("GetEvolutionChainBySpecies")
+        .WithSummary("Get cached evolution chain for a species")
+        .RequireAuthorization();
+
+        pokedex.MapPost("/populate-evolution-chains", (PopulateEvolutionChainsRequest request, IServiceScopeFactory scopeFactory) =>
+        {
+            var startId = request.StartId ?? 1;
+            var endId = request.EndId ?? 549;
+
+            if (startId < 1 || endId < startId || endId > 10000)
+                return Results.BadRequest(new { message = "Invalid range." });
+
+            if (PokedexService.IsPopulatingChains)
+                return Results.Conflict(new { message = "Evolution chain population is already in progress. Check /pokedex/status for progress." });
+
+            _ = Task.Run(async () =>
+            {
+                using var scope = scopeFactory.CreateScope();
+                var service = scope.ServiceProvider.GetRequiredService<IPokedexService>();
+                try { await service.PopulateEvolutionChainsAsync(startId, endId); }
+                catch (Exception ex) { Console.WriteLine($"Background chain populate error: {ex.Message}"); }
+            });
+
+            return Results.Accepted(value: new { message = $"Evolution chain population started for {startId}-{endId}." });
+        })
+        .WithName("PopulateEvolutionChains")
+        .WithSummary("Populate evolution chain cache from PokeAPI (admin only)")
+        .RequireAuthorization("AdminPolicy");
+
         return app;
     }
 }
@@ -164,3 +319,5 @@ public static class PokedexEndpoints
 public record PopulateRequest(int? StartId = null, int? EndId = null);
 public record PopulateItemsRequest(int? StartId = null, int? EndId = null);
 public record PopulateMovesRequest(int? StartId = null, int? EndId = null);
+public record PopulateAbilitiesRequest(int? StartId = null, int? EndId = null);
+public record PopulateEvolutionChainsRequest(int? StartId = null, int? EndId = null);

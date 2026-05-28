@@ -23,7 +23,11 @@ public static class ServiceCollectionExtensions
                 connectionString = storageConfig.GetConnectionString();
             }
 
-            opt.UseSqlite(connectionString);
+            opt.UseSqlite(connectionString, sqliteOpts =>
+            {
+                // Allow longer timeouts for background populate operations
+                sqliteOpts.CommandTimeout(120);
+            });
         });
 
         return services;
@@ -41,6 +45,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<FileWatcherService>();
         services.AddScoped<IPokemonService, PokemonService>();
         services.AddScoped<ITagService, TagService>();
+        services.AddScoped<ImageCacheService>();
         return services;
     }
 }

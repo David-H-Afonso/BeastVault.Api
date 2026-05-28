@@ -11,6 +11,7 @@ public class PokedexService : IPokedexService
 {
     private readonly AppDbContext _context;
     private readonly HttpClient _httpClient;
+    private readonly ImageCacheService _imageCache;
     private const string POKEAPI_BASE = "https://pokeapi.co/api/v2";
 
     // Static progress tracking for background population
@@ -31,6 +32,22 @@ public class PokedexService : IPokedexService
     private static int _populatingMovesTotal;
     private static readonly object _populateMovesLock = new();
 
+    // Abilities progress tracking
+    private static volatile bool _isPopulatingAbilities;
+    private static int _populatingAbilitiesCurrent;
+    private static int _populatingAbilitiesTotal;
+    private static readonly object _populateAbilitiesLock = new();
+
+    // Evolution chains progress tracking
+    private static volatile bool _isPopulatingChains;
+    private static int _populatingChainsCurrent;
+    private static int _populatingChainsTotal;
+    private static readonly object _populateChainsLock = new();
+
+    // Types progress tracking
+    private static volatile bool _isPopulatingTypes;
+    private static readonly object _populateTypesLock = new();
+
     public static bool IsPopulating => _isPopulating;
     public static int PopulatingCurrent => _populatingCurrent;
     public static int PopulatingTotal => _populatingTotal;
@@ -43,10 +60,21 @@ public class PokedexService : IPokedexService
     public static int PopulatingMovesCurrent => _populatingMovesCurrent;
     public static int PopulatingMovesTotal => _populatingMovesTotal;
 
-    public PokedexService(AppDbContext context, IHttpClientFactory httpClientFactory)
+    public static bool IsPopulatingAbilities => _isPopulatingAbilities;
+    public static int PopulatingAbilitiesCurrent => _populatingAbilitiesCurrent;
+    public static int PopulatingAbilitiesTotal => _populatingAbilitiesTotal;
+
+    public static bool IsPopulatingChains => _isPopulatingChains;
+    public static int PopulatingChainsCurrent => _populatingChainsCurrent;
+    public static int PopulatingChainsTotal => _populatingChainsTotal;
+
+    public static bool IsPopulatingTypes => _isPopulatingTypes;
+
+    public PokedexService(AppDbContext context, IHttpClientFactory httpClientFactory, ImageCacheService imageCache)
     {
         _context = context;
         _httpClient = httpClientFactory.CreateClient("PokeApi");
+        _imageCache = imageCache;
     }
 
     public async Task<PokedexEntry?> GetSpeciesAsync(int speciesId)
@@ -136,7 +164,29 @@ public class PokedexService : IPokedexService
             await _context.PokedexItems.CountAsync(),
             _isPopulatingItems, _populatingItemsCurrent, _populatingItemsTotal,
             await _context.PokedexMoves.CountAsync(),
-            _isPopulatingMoves, _populatingMovesCurrent, _populatingMovesTotal);
+            _isPopulatingMoves, _populatingMovesCurrent, _populatingMovesTotal,
+            await _context.PokedexAbilities.CountAsync(),
+            _isPopulatingAbilities, _populatingAbilitiesCurrent, _populatingAbilitiesTotal,
+            await _context.PokedexEvolutionChains.CountAsync(),
+            _isPopulatingChains, _populatingChainsCurrent, _populatingChainsTotal,
+            await _context.PokedexTypes.CountAsync(),
+            _isPopulatingTypes);
+    }
+
+    public async Task<SpriteDownloadStatusResponse> GetSpriteDownloadStatusAsync()
+    {
+        var spritesOnDisk = await _context.PokedexPokemon.CountAsync(p => p.SpriteLocalPath != null);
+        var artworkOnDisk = await _context.PokedexPokemon.CountAsync(p => p.ArtworkLocalPath != null);
+        var itemSpritesOnDisk = await _context.PokedexItems.CountAsync(i => i.SpriteLocalPath != null);
+
+        return new SpriteDownloadStatusResponse(
+            ImageCacheService.IsDownloading,
+            ImageCacheService.DownloadCurrent,
+            ImageCacheService.DownloadTotal,
+            spritesOnDisk,
+            artworkOnDisk,
+            itemSpritesOnDisk
+        );
     }
 
     public async Task<int> PopulateSpeciesRangeAsync(int startId, int endId, IProgress<string>? progress = null)
@@ -189,6 +239,7 @@ public class PokedexService : IPokedexService
 
                         var pokemon = ParsePokemon(pokemonId, speciesId, pokemonData.Value);
                         _context.PokedexPokemon.Add(pokemon);
+                        await _imageCache.DownloadSpritesForPokemonAsync(pokemon);
 
                         await Task.Delay(50);
                     }
@@ -203,6 +254,7 @@ public class PokedexService : IPokedexService
                 {
                     Console.WriteLine($"Error populating species {speciesId}: {ex.Message}");
                     progress?.Report($"Error on species {speciesId}: {ex.Message}");
+                    _context.ChangeTracker.Clear();
                 }
             }
         }
@@ -295,6 +347,18 @@ public class PokedexService : IPokedexService
             .Cast<object>()
             .ToList();
 
+        var evolutionChainUrl = data.TryGetProperty("evolution_chain", out var ec) && ec.ValueKind != JsonValueKind.Null
+            ? ec.GetProperty("url").GetString() ?? ""
+            : "";
+
+        // Extract numeric chain ID from URL (e.g. "https://pokeapi.co/api/v2/evolution-chain/1/")
+        int? evolutionChainId = null;
+        if (!string.IsNullOrEmpty(evolutionChainUrl))
+        {
+            var chainIdStr = evolutionChainUrl.TrimEnd('/').Split('/').Last();
+            if (int.TryParse(chainIdStr, out var cid)) evolutionChainId = cid;
+        }
+
         return new PokedexEntry
         {
             SpeciesId = speciesId,
@@ -318,9 +382,8 @@ public class PokedexService : IPokedexService
             FormsSwitchable = data.GetProperty("forms_switchable").GetBoolean(),
             EggGroups = JsonSerializer.Serialize(eggGroups),
             Varieties = JsonSerializer.Serialize(varieties),
-            EvolutionChainUrl = data.TryGetProperty("evolution_chain", out var ec) && ec.ValueKind != JsonValueKind.Null
-                ? ec.GetProperty("url").GetString() ?? ""
-                : "",
+            EvolutionChainUrl = evolutionChainUrl,
+            EvolutionChainId = evolutionChainId,
             CachedAt = DateTime.UtcNow
         };
     }
@@ -361,6 +424,9 @@ public class PokedexService : IPokedexService
         var gameIndices = data.TryGetProperty("game_indices", out var giEl)
             ? giEl.GetRawText() : "[]";
 
+        var movesJson = data.TryGetProperty("moves", out var mvEl)
+            ? mvEl.GetRawText() : "[]";
+
         return new PokedexPokemon
         {
             PokemonId = pokemonId,
@@ -379,6 +445,7 @@ public class PokedexService : IPokedexService
             Sprites = sprites,
             Cries = cries,
             GameIndices = gameIndices,
+            MovesJson = movesJson,
             CachedAt = DateTime.UtcNow
         };
     }
@@ -456,6 +523,7 @@ public class PokedexService : IPokedexService
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Error populating item {itemId}: {ex.Message}");
+                    _context.ChangeTracker.Clear();
                 }
             }
         }
@@ -564,18 +632,26 @@ public class PokedexService : IPokedexService
 
                 try
                 {
-                    if (await _context.PokedexMoves.FindAsync(moveId) != null)
-                    {
-                        populated++;
-                        continue;
-                    }
-
+                    // INSERT OR IGNORE handles the duplicate-skip case atomically —
+                    // no separate FindAsync needed (avoids stale context reads).
                     var data = await FetchJsonAsync($"{POKEAPI_BASE}/move/{moveId}");
                     if (data == null) continue;
 
                     var move = ParseMove(moveId, data.Value);
-                    _context.PokedexMoves.Add(move);
-                    await _context.SaveChangesAsync();
+
+                    // Use direct SQL INSERT OR IGNORE to completely bypass EF change-tracking.
+                    // EF Add+SaveChanges on a long-lived context can silently fail after any
+                    // prior exception even with ChangeTracker.Clear().
+                    object? powerParam = move.Power.HasValue ? move.Power.Value : (object?)null;
+                    object? accuracyParam = move.Accuracy.HasValue ? move.Accuracy.Value : (object?)null;
+                    await _context.Database.ExecuteSqlRawAsync(
+                        "INSERT OR IGNORE INTO \"PokedexMoves\" " +
+                        "(\"MoveId\",\"Name\",\"DisplayName\",\"Type\",\"DamageClass\",\"Power\",\"Accuracy\",\"PP\",\"Priority\",\"Effect\",\"FlavorText\",\"CachedAt\") " +
+                        "VALUES ({0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11})",
+                        move.MoveId, move.Name, move.DisplayName, move.Type, move.DamageClass,
+                        powerParam, accuracyParam,
+                        move.PP, move.Priority, move.Effect, move.FlavorText,
+                        move.CachedAt.ToString("O"));
                     populated++;
 
                     await Task.Delay(200);
@@ -583,6 +659,7 @@ public class PokedexService : IPokedexService
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Error populating move {moveId}: {ex.Message}");
+                    _context.ChangeTracker.Clear(); // Reset EF state after failed save
                 }
             }
         }
@@ -598,28 +675,35 @@ public class PokedexService : IPokedexService
 
     private static PokedexMove ParseMove(int moveId, JsonElement data)
     {
-        var name = data.GetProperty("name").GetString() ?? "";
+        var name = data.TryGetProperty("name", out var nm) ? nm.GetString() ?? "" : "";
 
         var displayName = name;
         if (data.TryGetProperty("names", out var names))
         {
             foreach (var n in names.EnumerateArray())
             {
-                if (n.GetProperty("language").GetProperty("name").GetString() == "en")
-                {
-                    displayName = n.GetProperty("name").GetString() ?? name;
-                    break;
-                }
+                if (!n.TryGetProperty("language", out var lang)) continue;
+                if (!lang.TryGetProperty("name", out var langName)) continue;
+                if (langName.GetString() != "en") continue;
+                if (n.TryGetProperty("name", out var nName))
+                    displayName = nName.GetString() ?? name;
+                break;
             }
         }
 
         var type = "";
         if (data.TryGetProperty("type", out var t) && t.ValueKind != JsonValueKind.Null)
-            type = t.GetProperty("name").GetString() ?? "";
+        {
+            if (t.TryGetProperty("name", out var tName))
+                type = tName.GetString() ?? "";
+        }
 
         var damageClass = "";
         if (data.TryGetProperty("damage_class", out var dc) && dc.ValueKind != JsonValueKind.Null)
-            damageClass = dc.GetProperty("name").GetString() ?? "";
+        {
+            if (dc.TryGetProperty("name", out var dcName))
+                damageClass = dcName.GetString() ?? "";
+        }
 
         var power = data.TryGetProperty("power", out var pw) && pw.ValueKind == JsonValueKind.Number
             ? pw.GetInt32() : (int?)null;
@@ -638,13 +722,13 @@ public class PokedexService : IPokedexService
         {
             foreach (var e in effects.EnumerateArray())
             {
-                if (e.GetProperty("language").GetProperty("name").GetString() == "en")
-                {
-                    effect = e.TryGetProperty("short_effect", out var se)
-                        ? se.GetString() ?? ""
-                        : e.GetProperty("effect").GetString() ?? "";
-                    break;
-                }
+                if (!e.TryGetProperty("language", out var lang)) continue;
+                if (!lang.TryGetProperty("name", out var langName)) continue;
+                if (langName.GetString() != "en") continue;
+                effect = e.TryGetProperty("short_effect", out var se)
+                    ? se.GetString() ?? ""
+                    : e.TryGetProperty("effect", out var eff) ? eff.GetString() ?? "" : "";
+                break;
             }
         }
 
@@ -653,10 +737,11 @@ public class PokedexService : IPokedexService
         {
             foreach (var ft in ftes.EnumerateArray())
             {
-                if (ft.GetProperty("language").GetProperty("name").GetString() == "en")
-                {
-                    flavorText = ft.GetProperty("text").GetString() ?? "";
-                }
+                if (!ft.TryGetProperty("language", out var lang)) continue;
+                if (!lang.TryGetProperty("name", out var langName)) continue;
+                if (langName.GetString() != "en") continue;
+                if (ft.TryGetProperty("text", out var txt))
+                    flavorText = txt.GetString() ?? "";
             }
         }
 
@@ -675,5 +760,289 @@ public class PokedexService : IPokedexService
             FlavorText = flavorText.Replace("\f", " ").Replace("\n", " ").Trim(),
             CachedAt = DateTime.UtcNow
         };
+    }
+
+    // ── Abilities ──────────────────────────────────────────────────────────
+
+    public async Task<PokedexAbility?> GetAbilityAsync(int abilityId)
+        => await _context.PokedexAbilities.FindAsync(abilityId);
+
+    public async Task<int> PopulateAbilitiesAsync(int startId, int endId)
+    {
+        lock (_populateAbilitiesLock)
+        {
+            if (_isPopulatingAbilities) return 0;
+            _isPopulatingAbilities = true;
+            _populatingAbilitiesCurrent = 0;
+            _populatingAbilitiesTotal = endId - startId + 1;
+        }
+
+        int populated = 0;
+
+        try
+        {
+            for (int abilityId = startId; abilityId <= endId; abilityId++)
+            {
+                _populatingAbilitiesCurrent = abilityId - startId + 1;
+
+                try
+                {
+                    if (await _context.PokedexAbilities.FindAsync(abilityId) != null)
+                    {
+                        populated++;
+                        continue;
+                    }
+
+                    var data = await FetchJsonAsync($"{POKEAPI_BASE}/ability/{abilityId}");
+                    if (data == null) continue;
+
+                    var ability = ParseAbility(abilityId, data.Value);
+                    _context.PokedexAbilities.Add(ability);
+                    await _context.SaveChangesAsync();
+                    populated++;
+
+                    await Task.Delay(200);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error populating ability {abilityId}: {ex.Message}");
+                    _context.ChangeTracker.Clear();
+                }
+            }
+        }
+        finally
+        {
+            _isPopulatingAbilities = false;
+            _populatingAbilitiesCurrent = 0;
+            _populatingAbilitiesTotal = 0;
+        }
+
+        return populated;
+    }
+
+    private static PokedexAbility ParseAbility(int abilityId, JsonElement data)
+    {
+        var name = data.GetProperty("name").GetString() ?? "";
+
+        var displayName = name;
+        if (data.TryGetProperty("names", out var names))
+        {
+            foreach (var n in names.EnumerateArray())
+            {
+                if (n.GetProperty("language").GetProperty("name").GetString() == "en")
+                {
+                    displayName = n.GetProperty("name").GetString() ?? name;
+                    break;
+                }
+            }
+        }
+
+        var effect = "";
+        var shortEffect = "";
+        if (data.TryGetProperty("effect_entries", out var effects))
+        {
+            foreach (var e in effects.EnumerateArray())
+            {
+                if (e.GetProperty("language").GetProperty("name").GetString() == "en")
+                {
+                    effect = e.TryGetProperty("effect", out var ef) ? ef.GetString() ?? "" : "";
+                    shortEffect = e.TryGetProperty("short_effect", out var se) ? se.GetString() ?? "" : "";
+                    break;
+                }
+            }
+        }
+
+        var flavorText = "";
+        if (data.TryGetProperty("flavor_text_entries", out var ftes))
+        {
+            foreach (var ft in ftes.EnumerateArray())
+            {
+                if (ft.GetProperty("language").GetProperty("name").GetString() == "en")
+                    flavorText = ft.GetProperty("flavor_text").GetString() ?? "";
+            }
+        }
+
+        var genUrl = data.TryGetProperty("generation", out var gen) && gen.ValueKind != JsonValueKind.Null
+            ? gen.GetProperty("url").GetString() ?? "" : "";
+        var genStr = genUrl.TrimEnd('/').Split('/').Last();
+        int.TryParse(genStr.Replace("generation-", "").Replace("i", "1").Replace("ii", "2"), out var generation);
+
+        return new PokedexAbility
+        {
+            AbilityId = abilityId,
+            Name = name,
+            DisplayName = displayName,
+            Effect = effect.Replace("\f", " ").Replace("\n", " ").Trim(),
+            ShortEffect = shortEffect.Replace("\f", " ").Replace("\n", " ").Trim(),
+            FlavorText = flavorText.Replace("\f", " ").Replace("\n", " ").Trim(),
+            Generation = generation,
+            IsMainSeries = data.TryGetProperty("is_main_series", out var ims) && ims.GetBoolean(),
+            CachedAt = DateTime.UtcNow
+        };
+    }
+
+    // ── Types ──────────────────────────────────────────────────────────────
+
+    public async Task<PokedexType?> GetTypeAsync(int typeId)
+        => await _context.PokedexTypes.FindAsync(typeId);
+
+    public async Task<List<PokedexType>> GetAllTypesAsync()
+        => await _context.PokedexTypes.OrderBy(t => t.TypeId).ToListAsync();
+
+    public async Task<int> PopulateTypesAsync()
+    {
+        lock (_populateTypesLock)
+        {
+            if (_isPopulatingTypes) return 0;
+            _isPopulatingTypes = true;
+        }
+
+        int populated = 0;
+
+        try
+        {
+            // PokeAPI has 18 standard types (1-18) + 2 shadow/unknown (10001, 10002) — skip those
+            for (int typeId = 1; typeId <= 18; typeId++)
+            {
+                try
+                {
+                    if (await _context.PokedexTypes.FindAsync(typeId) != null)
+                    {
+                        populated++;
+                        continue;
+                    }
+
+                    var data = await FetchJsonAsync($"{POKEAPI_BASE}/type/{typeId}");
+                    if (data == null) continue;
+
+                    var type = ParseType(typeId, data.Value);
+                    _context.PokedexTypes.Add(type);
+                    await _context.SaveChangesAsync();
+                    populated++;
+
+                    await Task.Delay(200);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error populating type {typeId}: {ex.Message}");
+                    _context.ChangeTracker.Clear();
+                }
+            }
+        }
+        finally
+        {
+            _isPopulatingTypes = false;
+        }
+
+        return populated;
+    }
+
+    private static PokedexType ParseType(int typeId, JsonElement data)
+    {
+        var name = data.GetProperty("name").GetString() ?? "";
+
+        var dr = data.GetProperty("damage_relations");
+        var damageRelations = new
+        {
+            doubleDamageTo = dr.GetProperty("double_damage_to").EnumerateArray()
+                .Select(t => t.GetProperty("name").GetString()).ToList(),
+            halfDamageTo = dr.GetProperty("half_damage_to").EnumerateArray()
+                .Select(t => t.GetProperty("name").GetString()).ToList(),
+            noDamageTo = dr.GetProperty("no_damage_to").EnumerateArray()
+                .Select(t => t.GetProperty("name").GetString()).ToList(),
+            doubleDamageFrom = dr.GetProperty("double_damage_from").EnumerateArray()
+                .Select(t => t.GetProperty("name").GetString()).ToList(),
+            halfDamageFrom = dr.GetProperty("half_damage_from").EnumerateArray()
+                .Select(t => t.GetProperty("name").GetString()).ToList(),
+            noDamageFrom = dr.GetProperty("no_damage_from").EnumerateArray()
+                .Select(t => t.GetProperty("name").GetString()).ToList(),
+        };
+
+        var genUrl = data.TryGetProperty("generation", out var gen) && gen.ValueKind != JsonValueKind.Null
+            ? gen.GetProperty("url").GetString() ?? "" : "";
+        var genStr = genUrl.TrimEnd('/').Split('/').Last();
+        int.TryParse(genStr.Replace("generation-", "").Replace("i", "1"), out var generation);
+
+        return new PokedexType
+        {
+            TypeId = typeId,
+            Name = name,
+            DamageRelations = System.Text.Json.JsonSerializer.Serialize(damageRelations),
+            Generation = generation,
+            CachedAt = DateTime.UtcNow
+        };
+    }
+
+    // ── Evolution Chains ──────────────────────────────────────────────────
+
+    public async Task<PokedexEvolutionChain?> GetEvolutionChainAsync(int chainId)
+        => await _context.PokedexEvolutionChains.FindAsync(chainId);
+
+    public async Task<PokedexEvolutionChain?> GetEvolutionChainBySpeciesAsync(int speciesId)
+    {
+        var entry = await _context.PokedexEntries.FindAsync(speciesId);
+        if (entry?.EvolutionChainId == null) return null;
+        return await _context.PokedexEvolutionChains.FindAsync(entry.EvolutionChainId.Value);
+    }
+
+    public async Task<int> PopulateEvolutionChainsAsync(int startId, int endId)
+    {
+        lock (_populateChainsLock)
+        {
+            if (_isPopulatingChains) return 0;
+            _isPopulatingChains = true;
+            _populatingChainsCurrent = 0;
+            _populatingChainsTotal = endId - startId + 1;
+        }
+
+        int populated = 0;
+
+        try
+        {
+            for (int chainId = startId; chainId <= endId; chainId++)
+            {
+                _populatingChainsCurrent = chainId - startId + 1;
+
+                try
+                {
+                    if (await _context.PokedexEvolutionChains.FindAsync(chainId) != null)
+                    {
+                        populated++;
+                        continue;
+                    }
+
+                    var data = await FetchJsonAsync($"{POKEAPI_BASE}/evolution-chain/{chainId}");
+                    if (data == null) continue;
+
+                    // Store the full chain node JSON
+                    var chainJson = data.Value.TryGetProperty("chain", out var chain)
+                        ? chain.GetRawText() : "{}";
+
+                    _context.PokedexEvolutionChains.Add(new PokedexEvolutionChain
+                    {
+                        ChainId = chainId,
+                        ChainJson = chainJson,
+                        CachedAt = DateTime.UtcNow
+                    });
+                    await _context.SaveChangesAsync();
+                    populated++;
+
+                    await Task.Delay(200);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error populating evolution chain {chainId}: {ex.Message}");
+                    _context.ChangeTracker.Clear();
+                }
+            }
+        }
+        finally
+        {
+            _isPopulatingChains = false;
+            _populatingChainsCurrent = 0;
+            _populatingChainsTotal = 0;
+        }
+
+        return populated;
     }
 }

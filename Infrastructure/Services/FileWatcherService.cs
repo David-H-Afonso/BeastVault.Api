@@ -45,9 +45,23 @@ namespace BeastVault.Api.Infrastructure.Services
                 // Always check for deleted files first
                 await CleanupDeletedFilesAsync(result);
 
-                // Scan each user's subdirectory
-                var userIds = _storage.GetExistingUserIds();
-                foreach (var userId in userIds)
+                // Scan each user's subdirectory — but only for users that actually
+                // exist in the DB. Orphan folders (e.g. left over from deleted users)
+                // would otherwise produce FOREIGN KEY violations on every insert.
+                var diskUserIds = _storage.GetExistingUserIds();
+                var dbUserIds = await _context.Users
+                    .Select(u => u.Id)
+                    .ToListAsync();
+                var validUserIds = diskUserIds.Intersect(dbUserIds).ToList();
+
+                var orphanUserIds = diskUserIds.Except(dbUserIds).ToList();
+                foreach (var orphan in orphanUserIds)
+                {
+                    Console.WriteLine(
+                        $"⚠️ Skipping orphan directory for user {orphan} — no matching user in database.");
+                }
+
+                foreach (var userId in validUserIds)
                 {
                     await ScanUserDirectoryAsync(userId, result);
                 }

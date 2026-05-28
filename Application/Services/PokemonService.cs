@@ -95,9 +95,20 @@ public class PokemonService : IPokemonService
             .Where(p => neededPokemonIds.Contains(p.PokemonId))
             .ToDictionaryAsync(p => p.PokemonId);
 
+        // Also load all variants per species for accurate form-name matching
+        // (variety-index lookup can fail for forms like Pikachu caps where PKHeX index != PokeAPI index)
+        var allSpeciesVariants = await _db.PokedexPokemon
+            .AsNoTracking()
+            .Where(p => uniqueSpeciesIds.Contains(p.SpeciesId))
+            .ToListAsync();
+        var pokedexPokemonBySpecies = allSpeciesVariants
+            .GroupBy(p => p.SpeciesId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
         var resultItems = items.Select(item =>
         {
-            string formName = PkHexStringService.GetFormName(item.SpeciesId, item.Form);
+            string rawFormName = PkHexStringService.GetFormName(item.SpeciesId, item.Form);
+            string formName = rawFormName;
 
             if (item.HasMegaStone && item.Form > 0)
             {
@@ -118,9 +129,29 @@ public class PokemonService : IPokemonService
             }
 
             // Resolve enrichment data from Pokédex cache
-            var key = $"{item.SpeciesId}-{item.Form}-{item.CanGigantamax}-{item.HasMegaStone}";
-            var pokeApiId = formToPokemonId.GetValueOrDefault(key, item.SpeciesId);
-            pokedexPokemon.TryGetValue(pokeApiId, out var cachedPokemon);
+            // For non-default forms, prefer name-based lookup over variety-index-based lookup
+            PokedexPokemon? cachedPokemon = null;
+            if (item.Form != 0 && !string.IsNullOrEmpty(rawFormName)
+                && pokedexPokemonBySpecies.TryGetValue(item.SpeciesId, out var speciesVariants))
+            {
+                var formNameLower = rawFormName.ToLowerInvariant();
+                cachedPokemon = speciesVariants.FirstOrDefault(p => p.Name.Contains(formNameLower))
+                    ?? speciesVariants.FirstOrDefault(p => p.IsDefault)
+                    ?? speciesVariants.OrderBy(p => p.PokemonId).FirstOrDefault();
+            }
+
+            if (cachedPokemon == null)
+            {
+                var key = $"{item.SpeciesId}-{item.Form}-{item.CanGigantamax}-{item.HasMegaStone}";
+                var pokeApiId = formToPokemonId.GetValueOrDefault(key, item.SpeciesId);
+                if (!pokedexPokemon.TryGetValue(pokeApiId, out cachedPokemon)
+                    && pokedexPokemonBySpecies.TryGetValue(item.SpeciesId, out var fallbackVariants))
+                {
+                    cachedPokemon = fallbackVariants.FirstOrDefault(p => p.IsDefault)
+                        ?? fallbackVariants.OrderBy(p => p.PokemonId).FirstOrDefault();
+                }
+            }
+
             pokedexEntries.TryGetValue(item.SpeciesId, out var cachedSpecies);
 
             var (type1, type2) = ExtractTypes(cachedPokemon);
@@ -245,45 +276,7 @@ public class PokemonService : IPokemonService
     private static PokemonSpritesDto BuildSpritesDto(PokedexPokemon? cached, PokedexEntry? species)
     {
         if (cached == null) return new PokemonSpritesDto();
-
-        try
-        {
-            var sprites = JsonSerializer.Deserialize<JsonElement>(cached.Sprites);
-
-            string Prop(JsonElement el, params string[] path)
-            {
-                var current = el;
-                foreach (var key in path)
-                {
-                    if (!current.TryGetProperty(key, out var next) || next.ValueKind == JsonValueKind.Null)
-                        return "";
-                    current = next;
-                }
-                return current.ValueKind == JsonValueKind.String ? current.GetString() ?? "" : "";
-            }
-
-            // Build GitHub sprite URLs
-            var pokemonName = cached.Name;
-            var generation = species?.Generation ?? 9;
-            string githubBase = generation <= 8
-                ? "https://raw.githubusercontent.com/msikma/pokesprite/master/pokemon-gen8"
-                : "https://raw.githubusercontent.com/bamq/pokemon-sprites/main/pokemon";
-
-            return new PokemonSpritesDto
-            {
-                Default = Prop(sprites, "front_default"),
-                Shiny = Prop(sprites, "front_shiny"),
-                Official = Prop(sprites, "other", "official-artwork", "front_default"),
-                OfficialShiny = Prop(sprites, "other", "official-artwork", "front_shiny"),
-                Home = Prop(sprites, "other", "home", "front_default"),
-                HomeShiny = Prop(sprites, "other", "home", "front_shiny"),
-                Showdown = Prop(sprites, "other", "showdown", "front_default"),
-                ShowdownShiny = Prop(sprites, "other", "showdown", "front_shiny"),
-                Github = $"{githubBase}/regular/{pokemonName}.png",
-                GithubShiny = $"{githubBase}/shiny/{pokemonName}.png"
-            };
-        }
-        catch { return new PokemonSpritesDto(); }
+        return PokemonSpritesDto.ForPokemonId(cached.PokemonId, cached.Name);
     }
 
     /// <summary>

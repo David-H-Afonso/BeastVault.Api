@@ -58,7 +58,17 @@ public record PopulationStatusResponse(
     int TotalMoves = 0,
     bool IsPopulatingMoves = false,
     int PopulatingMovesCurrent = 0,
-    int PopulatingMovesTotal = 0);
+    int PopulatingMovesTotal = 0,
+    int TotalAbilities = 0,
+    bool IsPopulatingAbilities = false,
+    int PopulatingAbilitiesCurrent = 0,
+    int PopulatingAbilitiesTotal = 0,
+    int TotalEvolutionChains = 0,
+    bool IsPopulatingChains = false,
+    int PopulatingChainsCurrent = 0,
+    int PopulatingChainsTotal = 0,
+    int TotalTypes = 0,
+    bool IsPopulatingTypes = false);
 
 public record PopulateResponse(
     string Message,

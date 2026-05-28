@@ -1,3 +1,4 @@
+using BeastVault.Api.Application.Services;
 using BeastVault.Api.Contracts;
 using BeastVault.Api.Domain.Entities;
 
@@ -14,5 +15,14 @@ public interface IPokedexService
     Task<int> PopulateSpeciesRangeAsync(int startId, int endId, IProgress<string>? progress = null);
     Task<int> PopulateItemsAsync(int startId, int endId);
     Task<int> PopulateMovesAsync(int startId, int endId);
+    Task<int> PopulateAbilitiesAsync(int startId, int endId);
+    Task<int> PopulateTypesAsync();
+    Task<int> PopulateEvolutionChainsAsync(int startId, int endId);
     Task<PopulationStatusResponse> GetPopulationStatusAsync();
+    Task<SpriteDownloadStatusResponse> GetSpriteDownloadStatusAsync();
+    Task<PokedexAbility?> GetAbilityAsync(int abilityId);
+    Task<PokedexType?> GetTypeAsync(int typeId);
+    Task<List<PokedexType>> GetAllTypesAsync();
+    Task<PokedexEvolutionChain?> GetEvolutionChainAsync(int chainId);
+    Task<PokedexEvolutionChain?> GetEvolutionChainBySpeciesAsync(int speciesId);
 }

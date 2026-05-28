@@ -3,6 +3,7 @@ using System;
 using BeastVault.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace BeastVault.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260527111546_AddSpriteCacheLocalPaths")]
+    partial class AddSpriteCacheLocalPaths
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.8");
@@ -296,12 +299,6 @@ namespace BeastVault.Api.Migrations
                     b.Property<string>("ArtworkLocalPath")
                         .HasColumnType("TEXT");
 
-                    b.Property<byte[]>("ArtworkData")
-                        .HasColumnType("BLOB");
-
-                    b.Property<byte[]>("ArtworkShinyData")
-                        .HasColumnType("BLOB");
-
                     b.Property<int>("BaseExperience")
                         .HasColumnType("INTEGER");
 
@@ -323,18 +320,8 @@ namespace BeastVault.Api.Migrations
                     b.Property<int>("Height")
                         .HasColumnType("INTEGER");
 
-                    b.Property<byte[]>("HomeSpriteData")
-                        .HasColumnType("BLOB");
-
-                    b.Property<byte[]>("HomeShinyData")
-                        .HasColumnType("BLOB");
-
                     b.Property<bool>("IsDefault")
                         .HasColumnType("INTEGER");
-
-                    b.Property<string>("MovesJson")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -348,24 +335,6 @@ namespace BeastVault.Api.Migrations
 
                     b.Property<string>("SpriteLocalPath")
                         .HasColumnType("TEXT");
-
-                    b.Property<byte[]>("SpriteData")
-                        .HasColumnType("BLOB");
-
-                    b.Property<byte[]>("ShinyData")
-                        .HasColumnType("BLOB");
-
-                    b.Property<byte[]>("ShowdownData")
-                        .HasColumnType("BLOB");
-
-                    b.Property<byte[]>("ShowdownShinyData")
-                        .HasColumnType("BLOB");
-
-                    b.Property<byte[]>("GithubSpriteData")
-                        .HasColumnType("BLOB");
-
-                    b.Property<byte[]>("GithubShinySpriteData")
-                        .HasColumnType("BLOB");
 
                     b.Property<string>("Sprites")
                         .IsRequired()

@@ -21,6 +21,9 @@ namespace BeastVault.Api.Infrastructure
         public DbSet<PokedexPokemon> PokedexPokemon => Set<PokedexPokemon>();
         public DbSet<PokedexItem> PokedexItems => Set<PokedexItem>();
         public DbSet<PokedexMove> PokedexMoves => Set<PokedexMove>();
+        public DbSet<PokedexAbility> PokedexAbilities => Set<PokedexAbility>();
+        public DbSet<PokedexEvolutionChain> PokedexEvolutionChains => Set<PokedexEvolutionChain>();
+        public DbSet<PokedexType> PokedexTypes => Set<PokedexType>();
 
         protected override void OnModelCreating(ModelBuilder b)
         {
@@ -47,6 +50,15 @@ namespace BeastVault.Api.Infrastructure
             b.Entity<PokedexMove>().HasKey(x => x.MoveId);
             b.Entity<PokedexMove>().Property(x => x.MoveId).ValueGeneratedNever();
             b.Entity<PokedexMove>().HasIndex(x => x.Type);
+
+            b.Entity<PokedexAbility>().HasKey(x => x.AbilityId);
+            b.Entity<PokedexAbility>().Property(x => x.AbilityId).ValueGeneratedNever();
+
+            b.Entity<PokedexEvolutionChain>().HasKey(x => x.ChainId);
+            b.Entity<PokedexEvolutionChain>().Property(x => x.ChainId).ValueGeneratedNever();
+
+            b.Entity<PokedexType>().HasKey(x => x.TypeId);
+            b.Entity<PokedexType>().Property(x => x.TypeId).ValueGeneratedNever();
 
             b.Entity<FileEntity>().HasKey(x => x.Id);
             b.Entity<FileEntity>().HasIndex(x => new { x.UserId, x.Sha256 }).IsUnique();

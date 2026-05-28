@@ -61,6 +61,24 @@ public record PokemonSpritesDto
     public string ShowdownShiny { get; init; } = "";
     public string Github { get; init; } = "";
     public string GithubShiny { get; init; } = "";
+
+    /// <summary>
+    /// Builds all sprite endpoint URLs for a given Pokémon.
+    /// All URLs point to local endpoints — sprites are downloaded and cached in DB.
+    /// </summary>
+    public static PokemonSpritesDto ForPokemonId(int id, string? name = null) => new()
+    {
+        Default = $"/sprites/pokemon/{id}.png",
+        Shiny = $"/sprites/pokemon/shiny/{id}.png",
+        Official = $"/sprites/pokemon/artwork/{id}.png",
+        OfficialShiny = $"/sprites/pokemon/artwork/shiny/{id}.png",
+        Home = $"/sprites/pokemon/home/{id}.png",
+        HomeShiny = $"/sprites/pokemon/home/shiny/{id}.png",
+        Showdown = $"/sprites/pokemon/showdown/{id}.gif",
+        ShowdownShiny = $"/sprites/pokemon/showdown/shiny/{id}.gif",
+        Github = $"/sprites/pokemon/github/{id}.png",
+        GithubShiny = $"/sprites/pokemon/github/shiny/{id}.png",
+    };
 }
 
 public record PokemonDetailDto

@@ -1,9 +1,77 @@
+using System.Text.Json;
+using BeastVault.Api.Application.Services;
+using BeastVault.Api.Infrastructure;
+using Microsoft.EntityFrameworkCore;
+
 namespace BeastVault.Api.Endpoints;
 
 public static class SpriteEndpoints
 {
     public static void MapSpriteEndpoints(this WebApplication app)
     {
+        // ── Cached sprites served from DB (downloaded from PokéAPI) ─────────────
+        app.MapGet("/sprites/{**path}", async (string path, AppDbContext db, ImageCacheService imageCacheService, IHttpClientFactory httpClientFactory) =>
+        {
+            // ── DB-backed Pokémon sprites (lazy download on first access) ──
+            var spriteMatch = System.Text.RegularExpressions.Regex.Match(path, @"^pokemon/(\d+)\.png$");
+            if (spriteMatch.Success && int.TryParse(spriteMatch.Groups[1].Value, out int spriteId))
+                return await ServeOrCachePokemonSpriteAsync(spriteId, SpriteKind.Default, db, httpClientFactory);
+
+            var artworkMatch = System.Text.RegularExpressions.Regex.Match(path, @"^pokemon/artwork/(\d+)\.png$");
+            if (artworkMatch.Success && int.TryParse(artworkMatch.Groups[1].Value, out int artworkId))
+                return await ServeOrCachePokemonSpriteAsync(artworkId, SpriteKind.Artwork, db, httpClientFactory);
+
+            var shinyMatch = System.Text.RegularExpressions.Regex.Match(path, @"^pokemon/shiny/(\d+)\.png$");
+            if (shinyMatch.Success && int.TryParse(shinyMatch.Groups[1].Value, out int shinyId))
+                return await ServeOrCachePokemonSpriteAsync(shinyId, SpriteKind.Shiny, db, httpClientFactory);
+
+            var homeMatch = System.Text.RegularExpressions.Regex.Match(path, @"^pokemon/home/(\d+)\.png$");
+            if (homeMatch.Success && int.TryParse(homeMatch.Groups[1].Value, out int homeId))
+                return await ServeOrCachePokemonSpriteAsync(homeId, SpriteKind.Home, db, httpClientFactory);
+
+            var homeShinyMatch = System.Text.RegularExpressions.Regex.Match(path, @"^pokemon/home/shiny/(\d+)\.png$");
+            if (homeShinyMatch.Success && int.TryParse(homeShinyMatch.Groups[1].Value, out int homeShinyId))
+                return await ServeOrCachePokemonSpriteAsync(homeShinyId, SpriteKind.HomeShiny, db, httpClientFactory);
+
+            var showdownMatch = System.Text.RegularExpressions.Regex.Match(path, @"^pokemon/showdown/(\d+)\.gif$");
+            if (showdownMatch.Success && int.TryParse(showdownMatch.Groups[1].Value, out int showdownId))
+                return await ServeOrCachePokemonSpriteAsync(showdownId, SpriteKind.Showdown, db, httpClientFactory);
+
+            var showdownShinyMatch = System.Text.RegularExpressions.Regex.Match(path, @"^pokemon/showdown/shiny/(\d+)\.gif$");
+            if (showdownShinyMatch.Success && int.TryParse(showdownShinyMatch.Groups[1].Value, out int showdownShinyId))
+                return await ServeOrCachePokemonSpriteAsync(showdownShinyId, SpriteKind.ShowdownShiny, db, httpClientFactory);
+
+            var artworkShinyMatch = System.Text.RegularExpressions.Regex.Match(path, @"^pokemon/artwork/shiny/(\d+)\.png$");
+            if (artworkShinyMatch.Success && int.TryParse(artworkShinyMatch.Groups[1].Value, out int artworkShinyId))
+                return await ServeOrCachePokemonSpriteAsync(artworkShinyId, SpriteKind.ArtworkShiny, db, httpClientFactory);
+
+            var githubMatch = System.Text.RegularExpressions.Regex.Match(path, @"^pokemon/github/(\d+)\.png$");
+            if (githubMatch.Success && int.TryParse(githubMatch.Groups[1].Value, out int githubId))
+                return await ServeOrCachePokemonSpriteAsync(githubId, SpriteKind.Github, db, httpClientFactory);
+
+            var githubShinyMatch = System.Text.RegularExpressions.Regex.Match(path, @"^pokemon/github/shiny/(\d+)\.png$");
+            if (githubShinyMatch.Success && int.TryParse(githubShinyMatch.Groups[1].Value, out int githubShinyId))
+                return await ServeOrCachePokemonSpriteAsync(githubShinyId, SpriteKind.GithubShiny, db, httpClientFactory);
+
+            // ── File-based fallback for legacy/custom sprites ──
+            var fullPath = imageCacheService.ResolveSpritePath(path);
+            if (fullPath == null) return Results.NotFound();
+            var ct = Path.GetExtension(path).ToLowerInvariant() switch
+            {
+                ".png" => "image/png",
+                ".jpg" or ".jpeg" => "image/jpeg",
+                ".webp" => "image/webp",
+                ".gif" => "image/gif",
+                _ => "application/octet-stream"
+            };
+            return Results.File(fullPath, ct, enableRangeProcessing: false);
+        })
+        .WithName("GetCachedSprite")
+        .WithTags("Files")
+        .Produces(200)
+        .Produces(404)
+        .AllowAnonymous();
+
         app.MapGet("/custom-sprites/search/{pattern}", (string pattern) =>
         {
             var assetsPath = ResolveAssetsPath();
@@ -96,6 +164,219 @@ public static class SpriteEndpoints
         .Produces(200, contentType: "application/octet-stream")
         .Produces(400)
         .Produces(404);
+    }
+
+    private enum SpriteKind { Default, Artwork, ArtworkShiny, Shiny, Home, HomeShiny, Showdown, ShowdownShiny, Github, GithubShiny }
+
+    /// <summary>Returns the fallback chain for a given sprite kind. The first element is the requested kind itself.
+    /// Every chain is exhaustive — it tries ALL available sprite sources so we never 404 if the Pokémon exists in DB.</summary>
+    private static SpriteKind[] GetFallbackChain(SpriteKind kind) => kind switch
+    {
+        SpriteKind.Default => new[] { SpriteKind.Default, SpriteKind.Home, SpriteKind.Artwork, SpriteKind.Github, SpriteKind.Showdown },
+        SpriteKind.Shiny => new[] { SpriteKind.Shiny, SpriteKind.HomeShiny, SpriteKind.ArtworkShiny, SpriteKind.GithubShiny, SpriteKind.ShowdownShiny, SpriteKind.Default, SpriteKind.Home, SpriteKind.Artwork, SpriteKind.Github, SpriteKind.Showdown },
+        SpriteKind.Artwork => new[] { SpriteKind.Artwork, SpriteKind.Home, SpriteKind.Default, SpriteKind.Github, SpriteKind.Showdown },
+        SpriteKind.ArtworkShiny => new[] { SpriteKind.ArtworkShiny, SpriteKind.Artwork, SpriteKind.HomeShiny, SpriteKind.Home, SpriteKind.GithubShiny, SpriteKind.Shiny, SpriteKind.Default, SpriteKind.ShowdownShiny, SpriteKind.Showdown },
+        SpriteKind.Home => new[] { SpriteKind.Home, SpriteKind.Artwork, SpriteKind.Default, SpriteKind.Github, SpriteKind.Showdown },
+        SpriteKind.HomeShiny => new[] { SpriteKind.HomeShiny, SpriteKind.Home, SpriteKind.ArtworkShiny, SpriteKind.Artwork, SpriteKind.GithubShiny, SpriteKind.Shiny, SpriteKind.Default, SpriteKind.ShowdownShiny, SpriteKind.Showdown },
+        SpriteKind.Showdown => new[] { SpriteKind.Showdown, SpriteKind.Home, SpriteKind.Default, SpriteKind.Github, SpriteKind.Artwork },
+        SpriteKind.ShowdownShiny => new[] { SpriteKind.ShowdownShiny, SpriteKind.Showdown, SpriteKind.HomeShiny, SpriteKind.Home, SpriteKind.GithubShiny, SpriteKind.Shiny, SpriteKind.Default, SpriteKind.ArtworkShiny, SpriteKind.Artwork },
+        SpriteKind.Github => new[] { SpriteKind.Github, SpriteKind.Home, SpriteKind.Default, SpriteKind.Artwork, SpriteKind.Showdown },
+        SpriteKind.GithubShiny => new[] { SpriteKind.GithubShiny, SpriteKind.Github, SpriteKind.HomeShiny, SpriteKind.Home, SpriteKind.Shiny, SpriteKind.Default, SpriteKind.ArtworkShiny, SpriteKind.Artwork, SpriteKind.ShowdownShiny, SpriteKind.Showdown },
+        _ => new[] { SpriteKind.Default, SpriteKind.Home, SpriteKind.Github, SpriteKind.Artwork, SpriteKind.Showdown },
+    };
+
+    private static async Task<IResult> ServeOrCachePokemonSpriteAsync(
+        int pokemonId, SpriteKind kind, AppDbContext db, IHttpClientFactory httpClientFactory)
+    {
+        var row = await db.PokedexPokemon
+            .Where(p => p.PokemonId == pokemonId)
+            .Select(p => new
+            {
+                p.SpriteData,
+                p.ArtworkData,
+                p.ArtworkShinyData,
+                p.ShinyData,
+                p.HomeSpriteData,
+                p.HomeShinyData,
+                p.ShowdownData,
+                p.ShowdownShinyData,
+                p.GithubSpriteData,
+                p.GithubShinySpriteData,
+                p.Sprites,
+                p.Name
+            })
+            .FirstOrDefaultAsync();
+
+        if (row == null) return Results.NotFound();
+
+        // Try the requested kind, then each fallback in the chain
+        var chain = GetFallbackChain(kind);
+        foreach (var tryKind in chain)
+        {
+            // 1. Check DB cache first
+            var cached = GetCachedBytes(tryKind, row);
+            if (cached != null)
+                return Results.File(cached, DetectContentType(cached));
+
+            // 2. Try to lazy-download
+            byte[]? bytes = null;
+            if (tryKind == SpriteKind.Github || tryKind == SpriteKind.GithubShiny)
+            {
+                // Pokesprite: name-based URL with smart fallback (strip form suffixes)
+                bytes = await TryDownloadPokeSpriteAsync(tryKind, row.Name, httpClientFactory);
+            }
+            else
+            {
+                var externalUrl = ExtractExternalUrl(tryKind, row.Sprites);
+                if (!string.IsNullOrEmpty(externalUrl))
+                {
+                    try
+                    {
+                        var client = httpClientFactory.CreateClient("PokeApi");
+                        bytes = await client.GetByteArrayAsync(externalUrl);
+                    }
+                    catch { /* download failed, try next fallback */ }
+                }
+            }
+
+            if (bytes != null)
+            {
+                await StoreSpriteBytes(tryKind, pokemonId, bytes, db);
+                return Results.File(bytes, DetectContentType(bytes));
+            }
+        }
+
+        return Results.NotFound();
+    }
+
+    /// <summary>
+    /// Tries to download a pokesprite from msikma/pokesprite with smart name fallback.
+    /// If "aegislash-shield" 404s, tries "aegislash". If "charizard-mega-x" works, returns it directly.
+    /// </summary>
+    private static async Task<byte[]?> TryDownloadPokeSpriteAsync(
+        SpriteKind kind, string pokemonName, IHttpClientFactory httpClientFactory)
+    {
+        var variant = kind == SpriteKind.GithubShiny ? "shiny" : "regular";
+        var client = httpClientFactory.CreateClient();
+        var name = pokemonName;
+
+        while (!string.IsNullOrEmpty(name))
+        {
+            var url = $"https://raw.githubusercontent.com/msikma/pokesprite/master/pokemon-gen8/{variant}/{name}.png";
+            try
+            {
+                var response = await client.GetAsync(url);
+                if (response.IsSuccessStatusCode)
+                    return await response.Content.ReadAsByteArrayAsync();
+            }
+            catch { /* network error, try shorter name */ }
+
+            // Strip last hyphenated segment: "aegislash-shield" → "aegislash"
+            var lastHyphen = name.LastIndexOf('-');
+            if (lastHyphen <= 0) break;
+            name = name[..lastHyphen];
+        }
+
+        return null;
+    }
+
+    private static byte[]? GetCachedBytes(SpriteKind kind, dynamic row) => kind switch
+    {
+        SpriteKind.Default => row.SpriteData,
+        SpriteKind.Shiny => row.ShinyData,
+        SpriteKind.Artwork => row.ArtworkData,
+        SpriteKind.ArtworkShiny => row.ArtworkShinyData,
+        SpriteKind.Home => row.HomeSpriteData,
+        SpriteKind.HomeShiny => row.HomeShinyData,
+        SpriteKind.Showdown => row.ShowdownData,
+        SpriteKind.ShowdownShiny => row.ShowdownShinyData,
+        SpriteKind.Github => row.GithubSpriteData,
+        SpriteKind.GithubShiny => row.GithubShinySpriteData,
+        _ => null,
+    };
+
+    private static string? ExtractExternalUrl(SpriteKind kind, string spritesJson)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(spritesJson);
+            var root = doc.RootElement;
+
+            return kind switch
+            {
+                SpriteKind.Default => TryGetString(root, "front_default"),
+                SpriteKind.Shiny => TryGetString(root, "front_shiny"),
+                SpriteKind.Artwork => TryGetNested(root, "other", "official-artwork", "front_default"),
+                SpriteKind.ArtworkShiny => TryGetNested(root, "other", "official-artwork", "front_shiny"),
+                SpriteKind.Home => TryGetNested(root, "other", "home", "front_default"),
+                SpriteKind.HomeShiny => TryGetNested(root, "other", "home", "front_shiny"),
+                SpriteKind.Showdown => TryGetNested(root, "other", "showdown", "front_default"),
+                SpriteKind.ShowdownShiny => TryGetNested(root, "other", "showdown", "front_shiny"),
+                _ => null,
+            };
+        }
+        catch { return null; }
+    }
+
+    private static string? TryGetString(JsonElement el, string prop)
+        => el.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+    private static string? TryGetNested(JsonElement root, string a, string b, string c)
+        => root.TryGetProperty(a, out var lvl1) && lvl1.TryGetProperty(b, out var lvl2) ? TryGetString(lvl2, c) : null;
+
+    private static async Task StoreSpriteBytes(SpriteKind kind, int pokemonId, byte[] bytes, AppDbContext db)
+    {
+        switch (kind)
+        {
+            case SpriteKind.Default:
+                await db.PokedexPokemon.Where(p => p.PokemonId == pokemonId)
+                    .ExecuteUpdateAsync(s => s.SetProperty(p => p.SpriteData, bytes));
+                break;
+            case SpriteKind.Shiny:
+                await db.PokedexPokemon.Where(p => p.PokemonId == pokemonId)
+                    .ExecuteUpdateAsync(s => s.SetProperty(p => p.ShinyData, bytes));
+                break;
+            case SpriteKind.Artwork:
+                await db.PokedexPokemon.Where(p => p.PokemonId == pokemonId)
+                    .ExecuteUpdateAsync(s => s.SetProperty(p => p.ArtworkData, bytes));
+                break;
+            case SpriteKind.ArtworkShiny:
+                await db.PokedexPokemon.Where(p => p.PokemonId == pokemonId)
+                    .ExecuteUpdateAsync(s => s.SetProperty(p => p.ArtworkShinyData, bytes));
+                break;
+            case SpriteKind.Home:
+                await db.PokedexPokemon.Where(p => p.PokemonId == pokemonId)
+                    .ExecuteUpdateAsync(s => s.SetProperty(p => p.HomeSpriteData, bytes));
+                break;
+            case SpriteKind.HomeShiny:
+                await db.PokedexPokemon.Where(p => p.PokemonId == pokemonId)
+                    .ExecuteUpdateAsync(s => s.SetProperty(p => p.HomeShinyData, bytes));
+                break;
+            case SpriteKind.Showdown:
+                await db.PokedexPokemon.Where(p => p.PokemonId == pokemonId)
+                    .ExecuteUpdateAsync(s => s.SetProperty(p => p.ShowdownData, bytes));
+                break;
+            case SpriteKind.ShowdownShiny:
+                await db.PokedexPokemon.Where(p => p.PokemonId == pokemonId)
+                    .ExecuteUpdateAsync(s => s.SetProperty(p => p.ShowdownShinyData, bytes));
+                break;
+            case SpriteKind.Github:
+                await db.PokedexPokemon.Where(p => p.PokemonId == pokemonId)
+                    .ExecuteUpdateAsync(s => s.SetProperty(p => p.GithubSpriteData, bytes));
+                break;
+            case SpriteKind.GithubShiny:
+                await db.PokedexPokemon.Where(p => p.PokemonId == pokemonId)
+                    .ExecuteUpdateAsync(s => s.SetProperty(p => p.GithubShinySpriteData, bytes));
+                break;
+        }
+    }
+
+    /// <summary>Detects image content type from magic bytes (PNG vs GIF).</summary>
+    private static string DetectContentType(byte[] bytes)
+    {
+        if (bytes.Length >= 4 && bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46)
+            return "image/gif";
+        return "image/png";
     }
 
     private static string? ResolveAssetsPath()

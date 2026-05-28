@@ -10,6 +10,8 @@ public class PokedexItem
     public string DisplayName { get; set; } = "";
     public string Category { get; set; } = "";
     public string SpriteUrl { get; set; } = "";
+    /// <summary>Local path served via /sprites/items/{ItemId}.png — null until sprites are downloaded.</summary>
+    public string? SpriteLocalPath { get; set; }
     public string Effect { get; set; } = "";
     public string FlavorText { get; set; } = "";
     public int? FlingPower { get; set; }

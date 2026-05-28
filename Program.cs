@@ -178,6 +178,7 @@ app.MapScanEndpoints();
 app.MapMaintenanceEndpoints();
 app.MapConfigurationEndpoints();
 app.MapPokedexEndpoints();
+app.MapVaultPokedexEndpoints();
 
 // Asegurar que exista la carpeta de almacenamiento y la BD
 using (var scope = app.Services.CreateScope())
@@ -358,7 +359,10 @@ using (var scope = app.Services.CreateScope())
             "20250910204519_InitialCreate",
             "20250912122823_EnsureTagsTableExists",
             "20260521134147_AddUserAndMultiUserSupport",
-            "20260522173522_AddPreferencesAndPokedexCache" })
+            "20260522173522_AddPreferencesAndPokedexCache",
+            "20260522204305_AddPokedexItems",
+            "20260522233512_AddPokedexMoves",
+            "20260527111546_AddSpriteCacheLocalPaths" })
         {
             using var cmd = conn.CreateCommand();
             cmd.CommandText = $@"INSERT OR IGNORE INTO ""__EFMigrationsHistory"" (""MigrationId"", ""ProductVersion"") VALUES ('{mig}', '9.0.8')";
@@ -371,6 +375,99 @@ using (var scope = app.Services.CreateScope())
     {
         Console.WriteLine($"❌ Error al migrar la base de datos: {ex.Message}");
         Console.WriteLine($"❌ Stack trace: {ex.StackTrace}");
+    }
+
+    // ── Always-runs column patch ───────────────────────────────────────────────
+    // Ensures columns that may be missing due to pre-migration databases are
+    // present regardless of which path the startup migration took.
+    try
+    {
+        var patchConn = db.Database.GetDbConnection();
+        if (patchConn.State != System.Data.ConnectionState.Open)
+            await patchConn.OpenAsync();
+
+        // Enable WAL mode for better concurrent read/write performance
+        using var walCmd = patchConn.CreateCommand();
+        walCmd.CommandText = "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA cache_size=-32000;";
+        await walCmd.ExecuteNonQueryAsync();
+
+        async Task EnsureColumnAsync(string table, string column, string definition)
+        {
+            using var check = patchConn.CreateCommand();
+            check.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name='{column}'";
+            var exists = Convert.ToInt64(await check.ExecuteScalarAsync()) > 0;
+            if (!exists)
+            {
+                using var alter = patchConn.CreateCommand();
+                alter.CommandText = $"ALTER TABLE \"{table}\" ADD COLUMN \"{column}\" {definition}";
+                await alter.ExecuteNonQueryAsync();
+                Console.WriteLine($"  ✅ Column patch: {table}.{column} added");
+            }
+        }
+
+        async Task EnsureTableAsync(string table, string columnsDdl)
+        {
+            using var check = patchConn.CreateCommand();
+            check.CommandText = $"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='{table}'";
+            var exists = Convert.ToInt64(await check.ExecuteScalarAsync()) > 0;
+            if (!exists)
+            {
+                using var create = patchConn.CreateCommand();
+                create.CommandText = $"CREATE TABLE \"{table}\" ({columnsDdl})";
+                await create.ExecuteNonQueryAsync();
+                Console.WriteLine($"  ✅ Table patch: {table} created");
+            }
+        }
+
+        await EnsureColumnAsync("Users", "CreatedAt", "TEXT NOT NULL DEFAULT '2026-01-01T00:00:00Z'");
+        await EnsureColumnAsync("PokedexPokemon", "SpriteLocalPath", "TEXT");
+        await EnsureColumnAsync("PokedexPokemon", "ArtworkLocalPath", "TEXT");
+        await EnsureColumnAsync("PokedexPokemon", "MovesJson", "TEXT NOT NULL DEFAULT '[]'");
+        await EnsureColumnAsync("PokedexItems", "SpriteLocalPath", "TEXT");
+        await EnsureColumnAsync("PokedexEntries", "EvolutionChainId", "INTEGER");
+
+        // Sprite blob columns for PokedexPokemon
+        await EnsureColumnAsync("PokedexPokemon", "SpriteData", "BLOB");
+        await EnsureColumnAsync("PokedexPokemon", "ArtworkData", "BLOB");
+        await EnsureColumnAsync("PokedexPokemon", "ArtworkShinyData", "BLOB");
+        await EnsureColumnAsync("PokedexPokemon", "ShinyData", "BLOB");
+        await EnsureColumnAsync("PokedexPokemon", "HomeSpriteData", "BLOB");
+        await EnsureColumnAsync("PokedexPokemon", "HomeShinyData", "BLOB");
+        await EnsureColumnAsync("PokedexPokemon", "ShowdownData", "BLOB");
+        await EnsureColumnAsync("PokedexPokemon", "ShowdownShinyData", "BLOB");
+        await EnsureColumnAsync("PokedexPokemon", "GithubSpriteData", "BLOB");
+        await EnsureColumnAsync("PokedexPokemon", "GithubShinySpriteData", "BLOB");
+
+        // New tables — created if they don't exist yet (EF migration may not have run on older DBs)
+        await EnsureTableAsync("PokedexAbilities", @"
+            ""AbilityId"" INTEGER NOT NULL,
+            ""Name"" TEXT NOT NULL DEFAULT '',
+            ""DisplayName"" TEXT NOT NULL DEFAULT '',
+            ""Effect"" TEXT NOT NULL DEFAULT '',
+            ""ShortEffect"" TEXT NOT NULL DEFAULT '',
+            ""FlavorText"" TEXT NOT NULL DEFAULT '',
+            ""Generation"" INTEGER NOT NULL DEFAULT 0,
+            ""IsMainSeries"" INTEGER NOT NULL DEFAULT 0,
+            ""CachedAt"" TEXT NOT NULL,
+            CONSTRAINT ""PK_PokedexAbilities"" PRIMARY KEY (""AbilityId"")");
+
+        await EnsureTableAsync("PokedexEvolutionChains", @"
+            ""ChainId"" INTEGER NOT NULL,
+            ""ChainJson"" TEXT NOT NULL DEFAULT '{}',
+            ""CachedAt"" TEXT NOT NULL,
+            CONSTRAINT ""PK_PokedexEvolutionChains"" PRIMARY KEY (""ChainId"")");
+
+        await EnsureTableAsync("PokedexTypes", @"
+            ""TypeId"" INTEGER NOT NULL,
+            ""Name"" TEXT NOT NULL DEFAULT '',
+            ""DamageRelations"" TEXT NOT NULL DEFAULT '{}',
+            ""Generation"" INTEGER NOT NULL DEFAULT 0,
+            ""CachedAt"" TEXT NOT NULL,
+            CONSTRAINT ""PK_PokedexTypes"" PRIMARY KEY (""TypeId"")");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"⚠️ Column patch error (non-fatal): {ex.Message}");
     }
 
     // Seed default admin user
