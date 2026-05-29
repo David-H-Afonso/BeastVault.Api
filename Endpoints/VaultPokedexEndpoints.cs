@@ -13,7 +13,27 @@ public static class VaultPokedexEndpoints
     {
         var dex = app.MapGroup("/dex").WithTags("VaultPokedex").RequireAuthorization();
 
-        // GET /dex?page=1&pageSize=30&generation=1&search=pika&unlockedOnly=false
+        // GET /dex/games — distinct origin games the user has Pokémon from
+        dex.MapGet("games", async (AppDbContext db, HttpContext ctx) =>
+        {
+            var userId = ctx.GetUserId();
+            if (userId == null) return Results.Unauthorized();
+
+            var gameIds = await db.Pokemon
+                .AsNoTracking()
+                .Where(p => p.UserId == userId.Value)
+                .Select(p => p.OriginGame)
+                .Distinct()
+                .OrderBy(id => id)
+                .ToListAsync();
+
+            var games = gameIds.Select(id => new { id, name = PkHexStringService.GetVersionName(id) }).ToList();
+            return Results.Ok(games);
+        })
+        .WithName("GetDexGames")
+        .WithSummary("Get distinct origin games present in the user's vault");
+
+        // GET /dex?page=1&pageSize=30&generation=1&search=pika&unlockedOnly=false&originGame=52
         dex.MapGet("", async (
             AppDbContext db,
             HttpContext ctx,
@@ -21,7 +41,8 @@ public static class VaultPokedexEndpoints
             int pageSize = 30,
             int? generation = null,
             string? search = null,
-            bool? unlockedOnly = null) =>
+            bool? unlockedOnly = null,
+            int? originGame = null) =>
         {
             var userId = ctx.GetUserId();
             if (userId == null) return Results.Unauthorized();
@@ -42,15 +63,18 @@ public static class VaultPokedexEndpoints
                 .OrderBy(s => s.SpeciesId)
                 .ToListAsync();
 
-            // Get all species IDs user owns (just a set of ints — fast)
-            var ownedSpeciesIds = await db.Pokemon
-                .Where(p => p.UserId == userId.Value)
+            // Get all species IDs user owns — optionally scoped to a specific origin game
+            var userPokemonQuery = db.Pokemon.Where(p => p.UserId == userId.Value);
+            if (originGame.HasValue)
+                userPokemonQuery = userPokemonQuery.Where(p => p.OriginGame == originGame.Value);
+
+            var ownedSpeciesIds = await userPokemonQuery
                 .Select(p => p.SpeciesId)
                 .Distinct()
                 .ToListAsync();
             var ownedSet = ownedSpeciesIds.ToHashSet();
 
-            // Counts per species
+            // Counts per species (always from all games so badge shows total)
             var ownedCounts = await db.Pokemon
                 .Where(p => p.UserId == userId.Value && ownedSet.Contains(p.SpeciesId))
                 .GroupBy(p => p.SpeciesId)
@@ -71,8 +95,8 @@ public static class VaultPokedexEndpoints
                 .Where(p => speciesIds.Contains(p.SpeciesId) && p.IsDefault)
                 .ToDictionaryAsync(p => p.SpeciesId);
 
-            // Apply unlocked filter after in-memory (simpler and dataset is bounded)
-            var filtered = unlockedOnly == true
+            // Apply unlocked filter (when originGame is set, ownedSet is already game-scoped)
+            var filtered = (unlockedOnly == true || originGame.HasValue)
                 ? allSpecies.Where(s => ownedSet.Contains(s.SpeciesId)).ToList()
                 : allSpecies;
 
