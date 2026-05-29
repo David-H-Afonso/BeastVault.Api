@@ -160,7 +160,7 @@ namespace BeastVault.Api.Infrastructure.Services
         }
 
         /// <summary>
-        /// Get version/game name by ID
+        /// Get version/game name by ID — values from PKHeX.Core 25.12.21 GameVersion enum
         /// </summary>
         public static string GetVersionName(int versionId, int language = 2)
         {
@@ -168,55 +168,83 @@ namespace BeastVault.Api.Infrastructure.Services
 
             return versionId switch
             {
-                // Gen 1
-                1 => "Red",
-                2 => "Blue",
-                3 => "Yellow",
-                // Gen 2
-                20 => "Gold",
-                21 => "Silver",
-                22 => "Crystal",
                 // Gen 3
-                30 => "Ruby",
-                31 => "Sapphire",
-                35 => "Emerald",
-                36 => "FireRed",
-                37 => "LeafGreen",
+                1 => "Sapphire",
+                2 => "Ruby",
+                3 => "Emerald",
+                4 => "FireRed",
+                5 => "LeafGreen",
                 // Gen 4
-                40 => "HeartGold",
-                41 => "SoulSilver",
-                42 => "Diamond",
-                43 => "Pearl",
-                44 => "Platinum",
+                7 => "HeartGold",
+                8 => "SoulSilver",
+                10 => "Diamond",
+                11 => "Pearl",
+                12 => "Platinum",
+                // Gen 3 spinoffs
+                15 => "Colosseum / XD",
+                16 => "Battle Revolution",
                 // Gen 5
-                50 => "Black",
-                51 => "White",
-                52 => "Black 2",
-                53 => "White 2",
+                20 => "White",
+                21 => "Black",
+                22 => "White 2",
+                23 => "Black 2",
                 // Gen 6
-                54 => "X",
-                55 => "Y",
-                57 => "Omega Ruby",
-                58 => "Alpha Sapphire",
+                24 => "X",
+                25 => "Y",
+                26 => "Alpha Sapphire",
+                27 => "Omega Ruby",
                 // Gen 7
-                59 => "Sun",
-                60 => "Moon",
-                61 => "Ultra Sun",
-                62 => "Ultra Moon",
-                // Gen 7 Let's Go
-                63 => "Let's Go Pikachu",
-                64 => "Let's Go Eevee",
+                30 => "Sun",
+                31 => "Moon",
+                32 => "Ultra Sun",
+                33 => "Ultra Moon",
+                34 => "Pokémon GO",
+                // Gen 1 (VC / original)
+                35 => "Red",
+                36 => "Green",
+                37 => "Blue",
+                38 => "Yellow",
+                // Gen 2 (VC / original)
+                39 => "Gold",
+                40 => "Silver",
+                41 => "Crystal",
+                // LGPE
+                42 => "Let's Go Pikachu",
+                43 => "Let's Go Eevee",
                 // Gen 8
-                68 => "Sword",
-                69 => "Shield",
-                // Gen 8 BDSP
-                72 => "Brilliant Diamond",
-                73 => "Shining Pearl",
-                // Gen 8 Legends
-                74 => "Legends: Arceus",
+                44 => "Sword",
+                45 => "Shield",
+                47 => "Legends: Arceus",
+                48 => "Brilliant Diamond",
+                49 => "Shining Pearl",
                 // Gen 9
-                75 => "Scarlet",
-                76 => "Violet",
+                50 => "Scarlet",
+                51 => "Violet",
+                52 => "Legends: Z-A",
+                // Multi-game groups (Home / Bank transfers)
+                53 => "Red / Blue",
+                54 => "Red / Blue / Yellow",
+                55 => "Gold / Silver",
+                56 => "Gold / Silver / Crystal",
+                57 => "Ruby / Sapphire",
+                58 => "Ruby / Sapphire / Emerald",
+                59 => "FireRed / LeafGreen",
+                60 => "Pokémon Box",
+                61 => "Colosseum",
+                62 => "XD: Gale of Darkness",
+                63 => "Diamond / Pearl",
+                64 => "Diamond / Pearl / Platinum",
+                65 => "HeartGold / SoulSilver",
+                66 => "Black / White",
+                67 => "Black 2 / White 2",
+                68 => "X / Y",
+                70 => "Omega Ruby / Alpha Sapphire",
+                71 => "Sun / Moon",
+                72 => "Ultra Sun / Ultra Moon",
+                73 => "Let's Go Pikachu / Eevee",
+                74 => "Sword / Shield",
+                75 => "Brilliant Diamond / Shining Pearl",
+                76 => "Scarlet / Violet",
                 _ => $"Version #{versionId}"
             };
         }
