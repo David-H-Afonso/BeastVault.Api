@@ -432,6 +432,75 @@ using (var scope = app.Services.CreateScope())
         }
 
         await EnsureColumnAsync("Users", "CreatedAt", "TEXT NOT NULL DEFAULT '2026-01-01T00:00:00Z'");
+
+        // Core vault tables. Some installations predate EF migrations and can have
+        // migration history repaired while still missing current model columns.
+        await EnsureColumnAsync("Files", "UserId", "INTEGER NOT NULL DEFAULT 1");
+        await EnsureColumnAsync("Files", "OriginalFileName", "TEXT");
+        await EnsureColumnAsync("Files", "RawBlob", "BLOB");
+
+        await EnsureColumnAsync("Pokemon", "UserId", "INTEGER NOT NULL DEFAULT 1");
+        await EnsureColumnAsync("Pokemon", "SpeciesId", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "Nickname", "TEXT");
+        await EnsureColumnAsync("Pokemon", "OtName", "TEXT NOT NULL DEFAULT ''");
+        await EnsureColumnAsync("Pokemon", "Tid", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "Sid", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "Level", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "IsShiny", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "Nature", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "AbilityId", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "BallId", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "TeraType", "INTEGER");
+        await EnsureColumnAsync("Pokemon", "HeldItemId", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "OriginGame", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "Language", "TEXT NOT NULL DEFAULT ''");
+        await EnsureColumnAsync("Pokemon", "MetDate", "TEXT");
+        await EnsureColumnAsync("Pokemon", "MetLocation", "TEXT");
+        await EnsureColumnAsync("Pokemon", "MetLevel", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "SpriteKey", "TEXT NOT NULL DEFAULT ''");
+        await EnsureColumnAsync("Pokemon", "Favorite", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "Notes", "TEXT");
+        await EnsureColumnAsync("Pokemon", "Gender", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "OTGender", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "OTLanguage", "TEXT NOT NULL DEFAULT ''");
+        await EnsureColumnAsync("Pokemon", "EncryptionConstant", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "PersonalityId", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "Experience", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "CurrentFriendship", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "Form", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "FormArgument", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "DynamaxLevel", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "CanGigantamax", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "IsEgg", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "FatefulEncounter", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "EggLocation", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "EggMetDate", "TEXT");
+        await EnsureColumnAsync("Pokemon", "HeightScalar", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "WeightScalar", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "Scale", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "PokerusState", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "PokerusDays", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "PokerusStrain", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "ContestCool", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "ContestBeauty", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "ContestCute", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "ContestSmart", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "ContestTough", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "ContestSheen", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "CurrentHandler", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "HandlingTrainerName", "TEXT NOT NULL DEFAULT ''");
+        await EnsureColumnAsync("Pokemon", "HandlingTrainerGender", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "HandlingTrainerLanguage", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "HandlingTrainerFriendship", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "OriginalTrainerMemory", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "OriginalTrainerMemoryIntensity", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "OriginalTrainerMemoryFeeling", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "OriginalTrainerMemoryVariable", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "HandlingTrainerMemory", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "HandlingTrainerMemoryIntensity", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "HandlingTrainerMemoryFeeling", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Pokemon", "HandlingTrainerMemoryVariable", "INTEGER NOT NULL DEFAULT 0");
+
         await EnsureColumnAsync("PokedexPokemon", "SpriteLocalPath", "TEXT");
         await EnsureColumnAsync("PokedexPokemon", "ArtworkLocalPath", "TEXT");
         await EnsureColumnAsync("PokedexPokemon", "MovesJson", "TEXT NOT NULL DEFAULT '[]'");
