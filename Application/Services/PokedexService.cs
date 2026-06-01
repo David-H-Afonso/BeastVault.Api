@@ -158,6 +158,12 @@ public class PokedexService : IPokedexService
         var lastUpdated = totalSpecies > 0
             ? await _context.PokedexEntries.MaxAsync(e => e.CachedAt)
             : (DateTime?)null;
+        var totalBulbapediaCached = await _context.BulbapediaCache.CountAsync();
+        var totalBulbapediaNormalized = await _context.BulbapediaCache.CountAsync(c =>
+            c.NormalizedStatus == ParseStatus.Success || c.NormalizedStatus == ParseStatus.PartialSuccess);
+        var totalBulbapediaFlavorEntries = await _context.PokedexFlavorEntries.CountAsync(f => f.Source == CacheSource.Bulbapedia);
+        var totalBulbapediaLocations = await _context.PokedexLocations.CountAsync(l => l.Source == CacheSource.Bulbapedia);
+        var totalBulbapediaSprites = await _context.PokedexSpriteEntries.CountAsync(s => s.Source == CacheSource.Bulbapedia);
 
         return new PopulationStatusResponse(totalSpecies, totalForms, maxSpeciesId, lastUpdated,
             _isPopulating, _populatingCurrent, _populatingTotal,
@@ -170,7 +176,12 @@ public class PokedexService : IPokedexService
             await _context.PokedexEvolutionChains.CountAsync(),
             _isPopulatingChains, _populatingChainsCurrent, _populatingChainsTotal,
             await _context.PokedexTypes.CountAsync(),
-            _isPopulatingTypes);
+            _isPopulatingTypes,
+            totalBulbapediaCached,
+            totalBulbapediaNormalized,
+            totalBulbapediaFlavorEntries,
+            totalBulbapediaLocations,
+            totalBulbapediaSprites);
     }
 
     public async Task<SpriteDownloadStatusResponse> GetSpriteDownloadStatusAsync()
@@ -225,6 +236,9 @@ public class PokedexService : IPokedexService
                     var entry = ParseSpecies(speciesId, speciesData.Value);
                     _context.PokedexEntries.Add(entry);
 
+                    // Save all per-game flavor text entries from PokeAPI
+                    SaveFlavorEntries(speciesId, speciesData.Value);
+
                     var varieties = speciesData.Value.GetProperty("varieties").EnumerateArray();
                     foreach (var variety in varieties)
                     {
@@ -240,6 +254,9 @@ public class PokedexService : IPokedexService
                         var pokemon = ParsePokemon(pokemonId, speciesId, pokemonData.Value);
                         _context.PokedexPokemon.Add(pokemon);
                         await _imageCache.DownloadSpritesForPokemonAsync(pokemon);
+
+                        // Fetch encounter locations from PokeAPI
+                        await FetchAndSaveEncountersAsync(speciesId, pokemonId, pokemon.IsDefault);
 
                         await Task.Delay(50);
                     }
@@ -448,6 +465,137 @@ public class PokedexService : IPokedexService
             MovesJson = movesJson,
             CachedAt = DateTime.UtcNow
         };
+    }
+
+    /// <summary>
+    /// Extracts all flavor_text_entries from PokeAPI species data and saves to PokedexFlavorEntries table.
+    /// </summary>
+    private void SaveFlavorEntries(int speciesId, JsonElement speciesData)
+    {
+        if (!speciesData.TryGetProperty("flavor_text_entries", out var entries)) return;
+
+        foreach (var ft in entries.EnumerateArray())
+        {
+            var lang = ft.GetProperty("language").GetProperty("name").GetString() ?? "";
+            var version = ft.GetProperty("version").GetProperty("name").GetString() ?? "";
+            var text = (ft.GetProperty("flavor_text").GetString() ?? "")
+                .Replace("\f", " ").Replace("\n", " ").Replace("  ", " ").Trim();
+            if (string.IsNullOrWhiteSpace(text)) continue;
+
+            _context.PokedexFlavorEntries.Add(new PokedexFlavorEntry
+            {
+                SpeciesId = speciesId,
+                Language = lang,
+                GameVersion = version,
+                Text = text,
+                Source = CacheSource.PokeApi
+            });
+        }
+    }
+
+    /// <summary>
+    /// Fetches encounter data from PokeAPI for a Pokemon and saves to PokedexLocations table.
+    /// Only fetches for the default form to avoid duplicates.
+    /// </summary>
+    private async Task FetchAndSaveEncountersAsync(int speciesId, int pokemonId, bool isDefault)
+    {
+        if (!isDefault) return;
+
+        var data = await FetchJsonAsync($"{POKEAPI_BASE}/pokemon/{pokemonId}/encounters");
+        if (data == null) return;
+
+        foreach (var encounter in data.Value.EnumerateArray())
+        {
+            var locationName = encounter.GetProperty("location_area").GetProperty("name").GetString() ?? "";
+            if (string.IsNullOrEmpty(locationName)) continue;
+
+            if (encounter.TryGetProperty("version_details", out var versionDetails))
+            {
+                foreach (var vd in versionDetails.EnumerateArray())
+                {
+                    var game = vd.GetProperty("version").GetProperty("name").GetString() ?? "";
+                    var method = "";
+                    if (vd.TryGetProperty("encounter_details", out var ed))
+                    {
+                        var methods = ed.EnumerateArray()
+                            .Select(e => e.GetProperty("method").GetProperty("name").GetString() ?? "")
+                            .Where(m => !string.IsNullOrEmpty(m))
+                            .Distinct()
+                            .ToList();
+                        method = string.Join(", ", methods);
+                    }
+
+                    _context.PokedexLocations.Add(new PokedexLocation
+                    {
+                        SpeciesId = speciesId,
+                        Game = game,
+                        Location = locationName.Replace("-", " "),
+                        Method = string.IsNullOrEmpty(method) ? null : method,
+                        Source = CacheSource.PokeApi
+                    });
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Backfills flavor entries and encounter data for already-cached species that don't have them yet.
+    /// </summary>
+    public async Task<(int flavorsFilled, int locationsFilled, int errors)> BackfillEntriesAndLocationsAsync(
+        int startId = 1, int endId = 1025)
+    {
+        int flavorsFilled = 0, locationsFilled = 0, errors = 0;
+
+        for (int speciesId = startId; speciesId <= endId; speciesId++)
+        {
+            try
+            {
+                // Check if species exists in cache
+                var exists = await _context.PokedexEntries.AnyAsync(e => e.SpeciesId == speciesId);
+                if (!exists) continue;
+
+                // Check if flavor entries already exist
+                var hasFlavors = await _context.PokedexFlavorEntries.AnyAsync(f => f.SpeciesId == speciesId);
+                if (!hasFlavors)
+                {
+                    var speciesData = await FetchJsonAsync($"{POKEAPI_BASE}/pokemon-species/{speciesId}");
+                    if (speciesData != null)
+                    {
+                        SaveFlavorEntries(speciesId, speciesData.Value);
+                        flavorsFilled++;
+                    }
+                    await Task.Delay(100);
+                }
+
+                // Check if locations already exist
+                var hasLocations = await _context.PokedexLocations.AnyAsync(l => l.SpeciesId == speciesId);
+                if (!hasLocations)
+                {
+                    // Get default pokemon ID for this species
+                    var defaultPokemon = await _context.PokedexPokemon
+                        .Where(p => p.SpeciesId == speciesId && p.IsDefault)
+                        .Select(p => p.PokemonId)
+                        .FirstOrDefaultAsync();
+                    if (defaultPokemon > 0)
+                    {
+                        await FetchAndSaveEncountersAsync(speciesId, defaultPokemon, true);
+                        locationsFilled++;
+                        await Task.Delay(100);
+                    }
+                }
+
+                if (!hasFlavors || !hasLocations)
+                    await _context.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error backfilling species {speciesId}: {ex.Message}");
+                errors++;
+                _context.ChangeTracker.Clear();
+            }
+        }
+
+        return (flavorsFilled, locationsFilled, errors);
     }
 
     private static string SafeGetName(JsonElement data, string property)

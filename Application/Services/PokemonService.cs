@@ -7,6 +7,7 @@ using BeastVault.Api.Domain.ValueObjects;
 using BeastVault.Api.Infrastructure;
 using BeastVault.Api.Infrastructure.Services;
 using BeastVault.Api.Application.Interfaces;
+using BeastVault.Api.Application.Mapping;
 
 namespace BeastVault.Api.Application.Services;
 
@@ -299,20 +300,8 @@ public class PokemonService : IPokemonService
 
     private static string BuildBallSpriteUrl(int ballId, string ballName)
     {
-        if (_ballSpriteOverrides.TryGetValue(ballId, out var overrideSlug))
-            return $"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/{overrideSlug}.png";
-
         if (string.IsNullOrEmpty(ballName) || ballName == "Unknown") return "";
-
-        // Convert "Poké Ball" → "poke-ball", "Beast Ball" → "beast-ball", etc.
-        var slug = ballName
-            .ToLowerInvariant()
-            .Replace("é", "e")
-            .Replace(" ", "-")
-            .Replace("(", "")
-            .Replace(")", "");
-
-        return $"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/{slug}.png";
+        return PokemonDisplayMapper.ResolveBallSpriteUrl(ballId, ballName);
     }
 
     public async Task<PokemonDetailDto?> GetPokemonByIdAsync(int userId, int pokemonId)

@@ -24,6 +24,11 @@ namespace BeastVault.Api.Infrastructure
         public DbSet<PokedexAbility> PokedexAbilities => Set<PokedexAbility>();
         public DbSet<PokedexEvolutionChain> PokedexEvolutionChains => Set<PokedexEvolutionChain>();
         public DbSet<PokedexType> PokedexTypes => Set<PokedexType>();
+        public DbSet<BulbapediaCache> BulbapediaCache => Set<BulbapediaCache>();
+        public DbSet<PokedexFlavorEntry> PokedexFlavorEntries => Set<PokedexFlavorEntry>();
+        public DbSet<PokedexLocation> PokedexLocations => Set<PokedexLocation>();
+        public DbSet<CachedImage> CachedImages => Set<CachedImage>();
+        public DbSet<PokedexSpriteEntry> PokedexSpriteEntries => Set<PokedexSpriteEntry>();
 
         protected override void OnModelCreating(ModelBuilder b)
         {
@@ -118,6 +123,24 @@ namespace BeastVault.Api.Infrastructure
                 .HasOne(ft => ft.Tag)
                 .WithMany(t => t.FileTags)
                 .HasForeignKey(ft => ft.TagId);
+
+            // Bulbapedia and enrichment entities
+            b.Entity<BulbapediaCache>().HasKey(x => x.Id);
+            b.Entity<BulbapediaCache>().HasIndex(x => x.SpeciesId);
+
+            b.Entity<PokedexFlavorEntry>().HasKey(x => x.Id);
+            b.Entity<PokedexFlavorEntry>().HasIndex(x => new { x.SpeciesId, x.Language, x.GameVersion });
+
+            b.Entity<PokedexLocation>().HasKey(x => x.Id);
+            b.Entity<PokedexLocation>().HasIndex(x => new { x.SpeciesId, x.Game });
+
+            b.Entity<CachedImage>().HasKey(x => x.Id);
+            b.Entity<CachedImage>().HasIndex(x => x.SourceUrl).IsUnique();
+            b.Entity<CachedImage>().HasIndex(x => x.SpeciesId);
+
+            b.Entity<PokedexSpriteEntry>().HasKey(x => x.Id);
+            b.Entity<PokedexSpriteEntry>().HasIndex(x => new { x.SpeciesId, x.GameSlug });
+            b.Entity<PokedexSpriteEntry>().HasIndex(x => x.PokemonId);
         }
     }
 }

@@ -21,6 +21,7 @@ public class PokemonEntity
     public string Language { get; set; } = "";
     public DateTime? MetDate { get; set; }
     public string? MetLocation { get; set; }
+    public int MetLevel { get; set; } = 0;
     public string SpriteKey { get; set; } = string.Empty;
     public bool Favorite { get; set; }
     public string? Notes { get; set; }

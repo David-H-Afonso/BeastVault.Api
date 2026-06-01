@@ -13,6 +13,19 @@ public static class SpriteEndpoints
         app.MapGet("/sprites/{**path}", async (string path, AppDbContext db, ImageCacheService imageCacheService, IHttpClientFactory httpClientFactory) =>
         {
             // ── DB-backed Pokémon sprites (lazy download on first access) ──
+            var versionSpriteMatch = System.Text.RegularExpressions.Regex.Match(path, @"^pokemon/version/(\d+)/([^/]+)/([^/]+)\.(png|gif)$");
+            if (versionSpriteMatch.Success &&
+                int.TryParse(versionSpriteMatch.Groups[1].Value, out int versionPokemonId))
+            {
+                return await ServeOrCachePokemonVersionSpriteAsync(
+                    versionPokemonId,
+                    versionSpriteMatch.Groups[2].Value,
+                    versionSpriteMatch.Groups[3].Value,
+                    versionSpriteMatch.Groups[4].Value,
+                    db,
+                    imageCacheService);
+            }
+
             var spriteMatch = System.Text.RegularExpressions.Regex.Match(path, @"^pokemon/(\d+)\.png$");
             if (spriteMatch.Success && int.TryParse(spriteMatch.Groups[1].Value, out int spriteId))
                 return await ServeOrCachePokemonSpriteAsync(spriteId, SpriteKind.Default, db, httpClientFactory);
@@ -52,6 +65,56 @@ public static class SpriteEndpoints
             var githubShinyMatch = System.Text.RegularExpressions.Regex.Match(path, @"^pokemon/github/shiny/(\d+)\.png$");
             if (githubShinyMatch.Success && int.TryParse(githubShinyMatch.Groups[1].Value, out int githubShinyId))
                 return await ServeOrCachePokemonSpriteAsync(githubShinyId, SpriteKind.GithubShiny, db, httpClientFactory);
+
+            // ── Auto-download ball sprites from pokesprite GitHub ──
+            var ballMatch = System.Text.RegularExpressions.Regex.Match(path, @"^balls/(.+)\.png$");
+            if (ballMatch.Success)
+            {
+                var ballSlug = ballMatch.Groups[1].Value;
+                var localPath = imageCacheService.ResolveSpritePath(path);
+                if (localPath != null)
+                    return Results.File(localPath, "image/png");
+
+                // Try downloading from pokesprite GitHub
+                var downloaded = await imageCacheService.DownloadBallSpriteAsync(ballSlug);
+                if (downloaded != null)
+                    return Results.File(downloaded, "image/png");
+
+                return Results.NotFound();
+            }
+
+            // ── Auto-download type icons from PokeAPI GitHub ──
+            var typeMatch = System.Text.RegularExpressions.Regex.Match(path, @"^types/(.+)\.png$");
+            if (typeMatch.Success)
+            {
+                var typeId = typeMatch.Groups[1].Value;
+                var localPath = imageCacheService.ResolveSpritePath(path);
+                if (localPath != null)
+                    return Results.File(localPath, "image/png");
+
+                var downloaded = await imageCacheService.DownloadTypeSpriteAsync(typeId);
+                if (downloaded != null)
+                    return Results.File(downloaded, "image/png");
+
+                return Results.NotFound();
+            }
+
+            // ── Auto-download item sprites from pokesprite GitHub ──
+            var itemMatch = System.Text.RegularExpressions.Regex.Match(path, @"^items/(.+)\.png$");
+            if (itemMatch.Success)
+            {
+                var itemSlug = itemMatch.Groups[1].Value;
+                var localPath = imageCacheService.ResolveSpritePath(path);
+                if (localPath != null)
+                    return Results.File(localPath, "image/png");
+
+                // Try downloading from pokesprite GitHub
+                var downloaded = await imageCacheService.DownloadItemSpriteAsync(itemSlug);
+                if (downloaded != null)
+                    return Results.File(downloaded, "image/png");
+
+                return Results.NotFound();
+            }
 
             // ── File-based fallback for legacy/custom sprites ──
             var fullPath = imageCacheService.ResolveSpritePath(path);
@@ -167,6 +230,71 @@ public static class SpriteEndpoints
     }
 
     private enum SpriteKind { Default, Artwork, ArtworkShiny, Shiny, Home, HomeShiny, Showdown, ShowdownShiny, Github, GithubShiny }
+
+    private static async Task<IResult> ServeOrCachePokemonVersionSpriteAsync(
+        int pokemonId,
+        string gameSlug,
+        string kind,
+        string extension,
+        AppDbContext db,
+        ImageCacheService imageCacheService)
+    {
+        var property = kind switch
+        {
+            "front" => "front_default",
+            "shiny" => "front_shiny",
+            "back" => "back_default",
+            "back-shiny" => "back_shiny",
+            _ => null
+        };
+        if (property == null) return Results.NotFound();
+
+        var safeGameSlug = System.Text.RegularExpressions.Regex.Replace(gameSlug, @"[^a-zA-Z0-9_-]", "");
+        if (string.IsNullOrWhiteSpace(safeGameSlug)) return Results.NotFound();
+
+        extension = extension.Equals("gif", StringComparison.OrdinalIgnoreCase) ? "gif" : "png";
+        var relativePath = $"pokemon/version/{pokemonId}/{safeGameSlug}/{kind}.{extension}";
+        var localPath = imageCacheService.ResolveSpritePath(relativePath);
+        if (localPath != null)
+            return Results.File(localPath, extension == "gif" ? "image/gif" : "image/png");
+
+        var spritesJson = await db.PokedexPokemon
+            .AsNoTracking()
+            .Where(p => p.PokemonId == pokemonId)
+            .Select(p => p.Sprites)
+            .FirstOrDefaultAsync();
+
+        if (string.IsNullOrWhiteSpace(spritesJson)) return Results.NotFound();
+
+        var externalUrl = ExtractVersionSpriteUrl(spritesJson, safeGameSlug, property);
+        if (string.IsNullOrWhiteSpace(externalUrl)) return Results.NotFound();
+
+        var downloadedRelativePath = await imageCacheService.DownloadFileAsync(externalUrl, relativePath);
+        if (downloadedRelativePath == null) return Results.NotFound();
+
+        localPath = imageCacheService.ResolveSpritePath(downloadedRelativePath);
+        if (localPath == null) return Results.NotFound();
+
+        return Results.File(localPath, extension == "gif" ? "image/gif" : "image/png");
+    }
+
+    private static string? ExtractVersionSpriteUrl(string spritesJson, string gameSlug, string property)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(spritesJson);
+            if (!doc.RootElement.TryGetProperty("versions", out var versions)) return null;
+
+            foreach (var generation in versions.EnumerateObject())
+            {
+                if (!generation.Value.TryGetProperty(gameSlug, out var game)) continue;
+                return TryGetString(game, property);
+            }
+        }
+        catch { }
+
+        return null;
+    }
 
     /// <summary>Returns the fallback chain for a given sprite kind. The first element is the requested kind itself.
     /// Every chain is exhaustive — it tries ALL available sprite sources so we never 404 if the Pokémon exists in DB.</summary>

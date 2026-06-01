@@ -3,6 +3,7 @@ using System;
 using BeastVault.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace BeastVault.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260531140436_SyncSchemaWithMetLevel")]
+    partial class SyncSchemaWithMetLevel
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.8");
@@ -26,26 +29,8 @@ namespace BeastVault.Api.Migrations
                     b.Property<DateTime>("CachedAt")
                         .HasColumnType("TEXT");
 
-                    b.Property<int>("EntriesCount")
-                        .HasColumnType("INTEGER");
-
                     b.Property<string>("ErrorMessage")
                         .HasColumnType("TEXT");
-
-                    b.Property<int>("LocationsCount")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("NameMeaning")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("NormalizedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("NormalizedError")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("NormalizedStatus")
-                        .HasColumnType("INTEGER");
 
                     b.Property<int?>("PageId")
                         .HasColumnType("INTEGER");
@@ -64,16 +49,10 @@ namespace BeastVault.Api.Migrations
                     b.Property<string>("RawContent")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("RawHtml")
-                        .HasColumnType("TEXT");
-
                     b.Property<int?>("RevisionId")
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("SpeciesId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("SpritesCount")
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("Status")
@@ -615,62 +594,6 @@ namespace BeastVault.Api.Migrations
                     b.HasIndex("SpeciesId");
 
                     b.ToTable("PokedexPokemon");
-                });
-
-            modelBuilder.Entity("BeastVault.Api.Domain.Entities.PokedexSpriteEntry", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("BackLocalPath")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("BackShinyLocalPath")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("CachedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("DisplayLabel")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("GameSlug")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Generation")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("NormalLocalPath")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int?>("PokemonId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("ShinyLocalPath")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("SortOrder")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("Source")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("SourceUrl")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("SpeciesId")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PokemonId");
-
-                    b.HasIndex("SpeciesId", "GameSlug");
-
-                    b.ToTable("PokedexSpriteEntries");
                 });
 
             modelBuilder.Entity("BeastVault.Api.Domain.Entities.PokedexType", b =>

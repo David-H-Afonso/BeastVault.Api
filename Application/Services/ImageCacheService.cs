@@ -279,7 +279,70 @@ public class ImageCacheService
         return File.Exists(full) ? full : null;
     }
 
+    // ── Ball & Item sprite auto-download ──────────────────────────────────────
+
+    private const string PokeSpriteBase = "https://raw.githubusercontent.com/msikma/pokesprite/master";
+
+    /// <summary>
+    /// Downloads a ball sprite from pokesprite GitHub. Returns the full local path or null.
+    /// pokesprite uses the ball name without the "-ball" suffix (e.g. "beast.png" for "beast-ball").
+    /// </summary>
+    public async Task<string?> DownloadBallSpriteAsync(string ballSlug)
+    {
+        var relativePath = $"balls/{ballSlug}.png";
+
+        // pokesprite convention: strip "-ball" suffix (e.g. "beast-ball" → "beast"), try that first
+        var candidates = new List<string>();
+        if (ballSlug.EndsWith("-ball"))
+            candidates.Add(ballSlug[..^5]);
+        candidates.Add(ballSlug); // fallback: slug as-is
+
+        foreach (var candidate in candidates)
+        {
+            var url = $"{PokeSpriteBase}/items/ball/{candidate}.png";
+            var result = await DownloadFileAsync(url, relativePath);
+            if (result != null) return Path.Combine(_spritesRoot, relativePath);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Downloads an item sprite from pokesprite GitHub. Returns the full local path or null.
+    /// Tries multiple pokesprite item subcategories.
+    /// </summary>
+    public async Task<string?> DownloadItemSpriteAsync(string itemSlug)
+    {
+        var relativePath = $"items/{itemSlug}.png";
+
+        // pokesprite organizes items in subcategories; try the most common ones
+        string[] categories = [
+            "hold-item", "medicine", "berry", "tm", "key-item",
+            "evolution", "treasure", "battle-item", "other-item",
+            "mail", "mega-stone", "z-crystals", "apricorn", "data-cards"
+        ];
+
+        foreach (var cat in categories)
+        {
+            var url = $"{PokeSpriteBase}/items/{cat}/{itemSlug}.png";
+            var result = await DownloadFileAsync(url, relativePath);
+            if (result != null) return Path.Combine(_spritesRoot, relativePath);
+        }
+
+        return null;
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Downloads a type icon from PokeAPI sprites GitHub. Returns the full local path or null.
+    /// </summary>
+    public async Task<string?> DownloadTypeSpriteAsync(string typeId)
+    {
+        var relativePath = $"types/{typeId}.png";
+        var url = $"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/types/generation-ix/scarlet-violet/{typeId}.png";
+        var result = await DownloadFileAsync(url, relativePath);
+        return result != null ? Path.Combine(_spritesRoot, relativePath) : null;
+    }
 
     private void EnsureDirectories()
     {
@@ -288,13 +351,15 @@ public class ImageCacheService
         Directory.CreateDirectory(Path.Combine(_spritesRoot, "pokemon", "artwork"));
         Directory.CreateDirectory(Path.Combine(_spritesRoot, "pokemon", "shiny"));
         Directory.CreateDirectory(Path.Combine(_spritesRoot, "items"));
+        Directory.CreateDirectory(Path.Combine(_spritesRoot, "balls"));
+        Directory.CreateDirectory(Path.Combine(_spritesRoot, "types"));
     }
 
     /// <summary>
     /// Downloads a remote URL to a local file inside <see cref="SpritesRoot"/>.
     /// Returns the relative path (e.g. "pokemon/25.png") or null on failure.
     /// </summary>
-    private async Task<string?> DownloadFileAsync(string url, string relativePath)
+    public async Task<string?> DownloadFileAsync(string url, string relativePath)
     {
         try
         {

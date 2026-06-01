@@ -312,6 +312,116 @@ public static class PokedexEndpoints
         .WithSummary("Populate evolution chain cache from PokeAPI (admin only)")
         .RequireAuthorization("AdminPolicy");
 
+        // Admin: enrich species with Bulbapedia data
+        pokedex.MapPost("/enrich", (PopulateRequest request, IServiceScopeFactory scopeFactory) =>
+        {
+            var startId = request.StartId ?? 1;
+            var endId = request.EndId ?? 1025;
+
+            _ = Task.Run(async () =>
+            {
+                using var scope = scopeFactory.CreateScope();
+                var service = scope.ServiceProvider.GetRequiredService<IBulbapediaService>();
+                var logger = scope.ServiceProvider.GetRequiredService<ILogger<BulbapediaService>>();
+                try
+                {
+                    var count = await service.EnrichSpeciesRangeAsync(startId, endId);
+                    logger.LogInformation("Bulbapedia enrichment complete: {Count} species enriched", count);
+                }
+                catch (Exception ex) { logger.LogError(ex, "Background Bulbapedia enrich error"); }
+            });
+
+            return Results.Accepted(value: new { message = $"Bulbapedia enrichment started for species {startId}-{endId}." });
+        })
+        .WithName("EnrichBulbapedia")
+        .WithSummary("Enrich Pokédex cache with Bulbapedia data (admin only)")
+        .RequireAuthorization("AdminPolicy");
+
+        // Admin: normalize already cached Bulbapedia pages into app tables
+        pokedex.MapPost("/normalize-bulbapedia", (PopulateRequest request, IServiceScopeFactory scopeFactory) =>
+        {
+            var startId = request.StartId ?? 1;
+            var endId = request.EndId ?? 1025;
+
+            _ = Task.Run(async () =>
+            {
+                using var scope = scopeFactory.CreateScope();
+                var service = scope.ServiceProvider.GetRequiredService<IBulbapediaService>();
+                var logger = scope.ServiceProvider.GetRequiredService<ILogger<BulbapediaService>>();
+
+                var normalized = 0;
+                var failed = 0;
+                var entries = 0;
+                var locations = 0;
+                var sprites = 0;
+
+                for (var speciesId = startId; speciesId <= endId; speciesId++)
+                {
+                    try
+                    {
+                        var result = await service.NormalizeSpeciesAsync(speciesId, force: true);
+                        if (result.Success)
+                        {
+                            normalized++;
+                            entries += result.Entries;
+                            locations += result.Locations;
+                            sprites += result.Sprites;
+                        }
+                        else
+                        {
+                            failed++;
+                            logger.LogWarning("Cached Bulbapedia normalization failed for species {SpeciesId}: {Error}", speciesId, result.Error);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        failed++;
+                        logger.LogError(ex, "Cached Bulbapedia normalization crashed for species {SpeciesId}", speciesId);
+                    }
+                }
+
+                logger.LogInformation(
+                    "Cached Bulbapedia normalization complete: {Normalized} normalized, {Failed} failed, {Entries} entries, {Locations} locations, {Sprites} sprites",
+                    normalized,
+                    failed,
+                    entries,
+                    locations,
+                    sprites);
+            });
+
+            return Results.Accepted(value: new { message = $"Cached Bulbapedia normalization started for species {startId}-{endId}." });
+        })
+        .WithName("NormalizeCachedBulbapedia")
+        .WithSummary("Normalize cached Bulbapedia pages into Pokédex data (admin only)")
+        .RequireAuthorization("AdminPolicy");
+
+        // Admin: backfill flavor entries + encounter locations from PokeAPI
+        pokedex.MapPost("/backfill-entries", (PopulateRequest request, IServiceScopeFactory scopeFactory) =>
+        {
+            var startId = request.StartId ?? 1;
+            var endId = request.EndId ?? 1025;
+
+            _ = Task.Run(async () =>
+            {
+                using var scope = scopeFactory.CreateScope();
+                var service = scope.ServiceProvider.GetRequiredService<IPokedexService>();
+                try
+                {
+                    var (flavors, locations, errors) = await service.BackfillEntriesAndLocationsAsync(startId, endId);
+                    Console.WriteLine($"Backfill complete: {flavors} flavors, {locations} locations, {errors} errors");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Backfill error: {ex.Message}");
+                }
+            });
+
+            return Results.Accepted(value: new { message = $"Backfill started for species {startId}-{endId}. Flavor entries and locations will be fetched from PokeAPI." });
+        })
+        .WithName("BackfillEntriesAndLocations")
+        .WithSummary("Backfill Pokédex flavor entries and encounter locations from PokeAPI")
+        .RequireAuthorization("AdminPolicy");
+
         return app;
     }
 }

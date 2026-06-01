@@ -68,7 +68,12 @@ public record PopulationStatusResponse(
     int PopulatingChainsCurrent = 0,
     int PopulatingChainsTotal = 0,
     int TotalTypes = 0,
-    bool IsPopulatingTypes = false);
+    bool IsPopulatingTypes = false,
+    int TotalBulbapediaCached = 0,
+    int TotalBulbapediaNormalized = 0,
+    int TotalBulbapediaFlavorEntries = 0,
+    int TotalBulbapediaLocations = 0,
+    int TotalBulbapediaSprites = 0);
 
 public record PopulateResponse(
     string Message,

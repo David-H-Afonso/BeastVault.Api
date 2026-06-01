@@ -3,11 +3,66 @@ using BeastVault.Api.Contracts;
 using BeastVault.Api.Infrastructure;
 using BeastVault.Api.Domain.Entities;
 using BeastVault.Api.Helpers;
+using BeastVault.Api.Application.Interfaces;
+using Microsoft.AspNetCore.Mvc;
 
 namespace BeastVault.Api.Endpoints
 {
     public static class TagEndpoints
     {
+        private static readonly HashSet<string> AllowedTagImageContentTypes = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "image/png",
+            "image/jpeg",
+            "image/webp",
+            "image/gif"
+        };
+
+        private static string GetTagImagePhysicalPath(string imagePath)
+        {
+            var normalized = imagePath.Replace('\\', '/');
+            if (normalized.StartsWith("/tags/", StringComparison.OrdinalIgnoreCase))
+            {
+                return Path.Combine("wwwroot", normalized.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
+            }
+
+            return imagePath;
+        }
+
+        private static void DeleteLocalTagImageIfExists(string? imagePath)
+        {
+            if (string.IsNullOrWhiteSpace(imagePath)) return;
+            if (Uri.TryCreate(imagePath, UriKind.Absolute, out var uri) &&
+                (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == "data"))
+            {
+                return;
+            }
+
+            var physicalPath = GetTagImagePhysicalPath(imagePath);
+            if (!File.Exists(physicalPath)) return;
+
+            try
+            {
+                File.Delete(physicalPath);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Could not delete tag image {physicalPath}: {ex.Message}");
+            }
+        }
+
+        private static TagDto ToTagDto(TagEntity tag, int pokemonCount) => new()
+        {
+            Id = tag.Id,
+            Name = tag.Name,
+            ImagePath = tag.ImagePath,
+            PokemonCount = pokemonCount,
+            Category = tag.Category.ToString(),
+            ColorHex = tag.ColorHex,
+            SortOrder = tag.SortOrder,
+            Description = tag.Description
+        };
+
         public static IEndpointRouteBuilder MapTagEndpoints(this IEndpointRouteBuilder app)
         {
             // Get all tags (user's own + system tags)
@@ -18,13 +73,18 @@ namespace BeastVault.Api.Endpoints
 
                 var tags = await db.Tags
                     .Where(t => t.UserId == null || t.UserId == userId)
-                    .OrderBy(t => t.Name)
+                    .OrderBy(t => t.SortOrder)
+                    .ThenBy(t => t.Name)
                     .Select(t => new TagDto
                     {
                         Id = t.Id,
                         Name = t.Name,
                         ImagePath = t.ImagePath,
-                        PokemonCount = db.PokemonTags.Count(pt => pt.TagId == t.Id)
+                        PokemonCount = db.PokemonTags.Count(pt => pt.TagId == t.Id),
+                        Category = t.Category.ToString(),
+                        ColorHex = t.ColorHex,
+                        SortOrder = t.SortOrder,
+                        Description = t.Description
                     })
                     .ToListAsync();
 
@@ -65,10 +125,17 @@ namespace BeastVault.Api.Endpoints
                 if (existingTag != null)
                     return Results.Conflict($"Tag with name '{request.Name}' already exists");
 
+                var category = TagCategory.Uncategorized;
+                if (!string.IsNullOrEmpty(request.Category))
+                    Enum.TryParse(request.Category, true, out category);
+
                 var tag = new TagEntity
                 {
                     Name = request.Name,
-                    UserId = userId
+                    UserId = userId,
+                    Category = category,
+                    ColorHex = request.ColorHex,
+                    Description = request.Description
                 };
 
                 db.Tags.Add(tag);
@@ -79,7 +146,11 @@ namespace BeastVault.Api.Endpoints
                     Id = tag.Id,
                     Name = tag.Name,
                     ImagePath = tag.ImagePath,
-                    PokemonCount = 0 // New tag has no Pokemon assigned yet
+                    PokemonCount = 0,
+                    Category = tag.Category.ToString(),
+                    ColorHex = tag.ColorHex,
+                    SortOrder = tag.SortOrder,
+                    Description = tag.Description
                 });
             }).WithTags("Tags").RequireAuthorization();
 
@@ -101,6 +172,16 @@ namespace BeastVault.Api.Endpoints
                     return Results.Conflict($"Tag with name '{request.Name}' already exists");
 
                 tag.Name = request.Name;
+
+                if (request.Category != null && Enum.TryParse<TagCategory>(request.Category, true, out var cat))
+                    tag.Category = cat;
+                if (request.ColorHex != null)
+                    tag.ColorHex = request.ColorHex;
+                if (request.SortOrder.HasValue)
+                    tag.SortOrder = request.SortOrder.Value;
+                if (request.Description != null)
+                    tag.Description = request.Description;
+
                 await db.SaveChangesAsync();
 
                 var pokemonCount = await db.PokemonTags.CountAsync(pt => pt.TagId == id);
@@ -110,7 +191,11 @@ namespace BeastVault.Api.Endpoints
                     Id = tag.Id,
                     Name = tag.Name,
                     ImagePath = tag.ImagePath,
-                    PokemonCount = pokemonCount
+                    PokemonCount = pokemonCount,
+                    Category = tag.Category.ToString(),
+                    ColorHex = tag.ColorHex,
+                    SortOrder = tag.SortOrder,
+                    Description = tag.Description
                 });
             }).WithTags("Tags").RequireAuthorization();
 
@@ -131,18 +216,7 @@ namespace BeastVault.Api.Endpoints
 
                 db.PokemonTags.RemoveRange(pokemonTags);
 
-                // Delete the tag image if it exists
-                if (!string.IsNullOrEmpty(tag.ImagePath) && File.Exists(tag.ImagePath))
-                {
-                    try
-                    {
-                        File.Delete(tag.ImagePath);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"Could not delete tag image {tag.ImagePath}: {ex.Message}");
-                    }
-                }
+                DeleteLocalTagImageIfExists(tag.ImagePath);
 
                 // Remove the tag
                 db.Tags.Remove(tag);
@@ -152,7 +226,7 @@ namespace BeastVault.Api.Endpoints
             }).WithTags("Tags").RequireAuthorization();
 
             // Upload tag image
-            app.MapPost("/tags/{id:int}/image", async (int id, IFormFile file, AppDbContext db, HttpContext ctx) =>
+            app.MapPost("/tags/{id:int}/image", async (int id, [FromForm] IFormFile file, AppDbContext db, HttpContext ctx) =>
             {
                 var userId = ctx.GetUserId();
                 if (userId == null) return Results.Unauthorized();
@@ -161,29 +235,28 @@ namespace BeastVault.Api.Endpoints
                 if (tag == null)
                     return Results.NotFound();
 
-                // Validate file type
-                if (file.ContentType != "image/png")
-                    return Results.BadRequest("Only PNG images are allowed");
+                if (file.Length == 0)
+                    return Results.BadRequest("Image file is empty");
+
+                if (!AllowedTagImageContentTypes.Contains(file.ContentType))
+                    return Results.BadRequest("Only PNG, JPG, WebP, and GIF images are allowed");
 
                 // Create tags directory if it doesn't exist
                 var tagsDir = Path.Combine("wwwroot", "tags");
                 Directory.CreateDirectory(tagsDir);
 
-                // Delete existing image if it exists
-                if (!string.IsNullOrEmpty(tag.ImagePath) && File.Exists(tag.ImagePath))
+                DeleteLocalTagImageIfExists(tag.ImagePath);
+
+                var extension = file.ContentType.ToLowerInvariant() switch
                 {
-                    try
-                    {
-                        File.Delete(tag.ImagePath);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"Could not delete existing tag image {tag.ImagePath}: {ex.Message}");
-                    }
-                }
+                    "image/jpeg" => ".jpg",
+                    "image/webp" => ".webp",
+                    "image/gif" => ".gif",
+                    _ => ".png"
+                };
 
                 // Save the new image
-                var fileName = $"tag_{id}_{Guid.NewGuid()}.png";
+                var fileName = $"tag_{id}_{Guid.NewGuid():N}{extension}";
                 var filePath = Path.Combine(tagsDir, fileName);
 
                 using (var stream = File.Create(filePath))
@@ -192,18 +265,36 @@ namespace BeastVault.Api.Endpoints
                 }
 
                 // Update the tag
-                tag.ImagePath = filePath;
+                tag.ImagePath = $"/tags/{fileName}";
                 await db.SaveChangesAsync();
 
                 var pokemonCount = await db.PokemonTags.CountAsync(pt => pt.TagId == id);
 
-                return Results.Ok(new TagDto
+                return Results.Ok(ToTagDto(tag, pokemonCount));
+            }).DisableAntiforgery().WithTags("Tags").RequireAuthorization();
+
+            // Use a remote tag image URL
+            app.MapPut("/tags/{id:int}/image-url", async (int id, TagImageUrlRequest request, AppDbContext db, HttpContext ctx) =>
+            {
+                var userId = ctx.GetUserId();
+                if (userId == null) return Results.Unauthorized();
+
+                var tag = await db.Tags.FirstOrDefaultAsync(t => t.Id == id && t.UserId == userId);
+                if (tag == null)
+                    return Results.NotFound();
+
+                if (!Uri.TryCreate(request.ImageUrl.Trim(), UriKind.Absolute, out var uri) ||
+                    (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
                 {
-                    Id = tag.Id,
-                    Name = tag.Name,
-                    ImagePath = tag.ImagePath,
-                    PokemonCount = pokemonCount
-                });
+                    return Results.BadRequest("ImageUrl must be an absolute HTTP or HTTPS URL");
+                }
+
+                DeleteLocalTagImageIfExists(tag.ImagePath);
+                tag.ImagePath = uri.ToString();
+                await db.SaveChangesAsync();
+
+                var pokemonCount = await db.PokemonTags.CountAsync(pt => pt.TagId == id);
+                return Results.Ok(ToTagDto(tag, pokemonCount));
             }).WithTags("Tags").RequireAuthorization();
 
             // Delete tag image
@@ -219,18 +310,7 @@ namespace BeastVault.Api.Endpoints
                 if (string.IsNullOrEmpty(tag.ImagePath))
                     return Results.BadRequest("Tag has no image");
 
-                // Delete the image file
-                if (File.Exists(tag.ImagePath))
-                {
-                    try
-                    {
-                        File.Delete(tag.ImagePath);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"Could not delete tag image {tag.ImagePath}: {ex.Message}");
-                    }
-                }
+                DeleteLocalTagImageIfExists(tag.ImagePath);
 
                 // Update the tag
                 tag.ImagePath = null;
@@ -238,13 +318,7 @@ namespace BeastVault.Api.Endpoints
 
                 var pokemonCount = await db.PokemonTags.CountAsync(pt => pt.TagId == id);
 
-                return Results.Ok(new TagDto
-                {
-                    Id = tag.Id,
-                    Name = tag.Name,
-                    ImagePath = tag.ImagePath,
-                    PokemonCount = pokemonCount
-                });
+                return Results.Ok(ToTagDto(tag, pokemonCount));
             }).WithTags("Tags").RequireAuthorization();
 
             // Get tags assigned to a Pokémon
@@ -373,6 +447,19 @@ namespace BeastVault.Api.Endpoints
                 await db.SaveChangesAsync();
 
                 return Results.NoContent();
+            }).WithTags("Tags").RequireAuthorization();
+
+            // Bulk tag operations
+            app.MapPatch("/pokemon/tags/bulk", async (BulkTagRequest request, ITagService tagService, HttpContext ctx) =>
+            {
+                var userId = ctx.GetUserId();
+                if (userId == null) return Results.Unauthorized();
+
+                if (request.PokemonIds.Length == 0)
+                    return Results.BadRequest("PokemonIds must not be empty");
+
+                var result = await tagService.BulkUpdateTagsAsync(userId.Value, request);
+                return Results.Ok(result);
             }).WithTags("Tags").RequireAuthorization();
 
             return app;

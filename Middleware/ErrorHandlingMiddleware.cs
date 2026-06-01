@@ -9,11 +9,13 @@ public class ErrorHandlingMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly ILogger<ErrorHandlingMiddleware> _logger;
+    private readonly IHostEnvironment _env;
 
-    public ErrorHandlingMiddleware(RequestDelegate next, ILogger<ErrorHandlingMiddleware> logger)
+    public ErrorHandlingMiddleware(RequestDelegate next, ILogger<ErrorHandlingMiddleware> logger, IHostEnvironment env)
     {
         _next = next;
         _logger = logger;
+        _env = env;
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -25,11 +27,11 @@ public class ErrorHandlingMiddleware
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unhandled exception");
-            await HandleExceptionAsync(context, ex);
+            await HandleExceptionAsync(context, ex, _env.IsDevelopment());
         }
     }
 
-    private static async Task HandleExceptionAsync(HttpContext context, Exception exception)
+    private static async Task HandleExceptionAsync(HttpContext context, Exception exception, bool isDevelopment)
     {
         context.Response.ContentType = "application/json";
         var (statusCode, message, details) = exception switch
@@ -46,7 +48,8 @@ public class ErrorHandlingMiddleware
             KeyNotFoundException knfEx =>
                 ((int)HttpStatusCode.NotFound, "Resource not found", knfEx.Message),
             _ =>
-                ((int)HttpStatusCode.InternalServerError, "An unexpected error occurred", string.Empty)
+                ((int)HttpStatusCode.InternalServerError, "An unexpected error occurred",
+                    isDevelopment ? exception.ToString() : string.Empty)
         };
 
         context.Response.StatusCode = statusCode;

@@ -106,6 +106,14 @@ builder.Services.AddHttpClient("PokeApi", client =>
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
+// Bulbapedia service + HttpClient
+builder.Services.AddScoped<IBulbapediaService, BulbapediaService>();
+builder.Services.AddHttpClient("Bulbapedia", client =>
+{
+    client.DefaultRequestHeaders.Add("User-Agent", "BeastVault/1.0 (Pokemon collection app)");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+
 // CORS — read comma-separated origins from CORS_ALLOWED_ORIGINS env var
 var corsOriginsRaw = Environment.GetEnvironmentVariable("CORS_ALLOWED_ORIGINS");
 if (!string.IsNullOrWhiteSpace(corsOriginsRaw))
@@ -362,7 +370,11 @@ using (var scope = app.Services.CreateScope())
             "20260522173522_AddPreferencesAndPokedexCache",
             "20260522204305_AddPokedexItems",
             "20260522233512_AddPokedexMoves",
-            "20260527111546_AddSpriteCacheLocalPaths" })
+            "20260527111546_AddSpriteCacheLocalPaths",
+            "20260527160000_AddSpriteDataBlobs",
+            "20260527162000_AddHomeSpriteColumns",
+            "20260531140436_SyncSchemaWithMetLevel",
+            "20260531202009_BulbapediaNormalization" })
         {
             using var cmd = conn.CreateCommand();
             cmd.CommandText = $@"INSERT OR IGNORE INTO ""__EFMigrationsHistory"" (""MigrationId"", ""ProductVersion"") VALUES ('{mig}', '9.0.8')";
@@ -482,6 +494,98 @@ using (var scope = app.Services.CreateScope())
             ""Generation"" INTEGER NOT NULL DEFAULT 0,
             ""CachedAt"" TEXT NOT NULL,
             CONSTRAINT ""PK_PokedexTypes"" PRIMARY KEY (""TypeId"")");
+
+        // Tag metadata columns (Phase 3 overhaul)
+        await EnsureColumnAsync("Tags", "Category", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Tags", "ColorHex", "TEXT");
+        await EnsureColumnAsync("Tags", "SortOrder", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("Tags", "Description", "TEXT");
+
+        // PokemonTag sort order
+        await EnsureColumnAsync("PokemonTags", "SortOrder", "INTEGER NOT NULL DEFAULT 0");
+
+        // UserPreference new columns
+        await EnsureColumnAsync("UserPreferences", "OrganizeDensity", "TEXT NOT NULL DEFAULT 'expanded'");
+        await EnsureColumnAsync("UserPreferences", "KanbanDragMode", "TEXT NOT NULL DEFAULT 'move'");
+
+        // Bulbapedia cache table
+        await EnsureTableAsync("BulbapediaCache", @"
+            ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+            ""SpeciesId"" INTEGER NOT NULL DEFAULT 0,
+            ""PageTitle"" TEXT NOT NULL DEFAULT '',
+            ""PageUrl"" TEXT NOT NULL DEFAULT '',
+            ""RevisionId"" INTEGER,
+            ""PageId"" INTEGER,
+            ""RawContent"" TEXT,
+            ""ParsedSections"" TEXT,
+            ""Status"" INTEGER NOT NULL DEFAULT 0,
+            ""ErrorMessage"" TEXT,
+            ""CachedAt"" TEXT NOT NULL DEFAULT '2026-01-01T00:00:00Z'");
+        await EnsureColumnAsync("BulbapediaCache", "RawHtml", "TEXT");
+        await EnsureColumnAsync("BulbapediaCache", "NameMeaning", "TEXT");
+        await EnsureColumnAsync("BulbapediaCache", "NormalizedAt", "TEXT");
+        await EnsureColumnAsync("BulbapediaCache", "NormalizedStatus", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("BulbapediaCache", "NormalizedError", "TEXT");
+        await EnsureColumnAsync("BulbapediaCache", "EntriesCount", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("BulbapediaCache", "LocationsCount", "INTEGER NOT NULL DEFAULT 0");
+        await EnsureColumnAsync("BulbapediaCache", "SpritesCount", "INTEGER NOT NULL DEFAULT 0");
+
+        // Pokédex flavor entries (multi-language, multi-game)
+        await EnsureTableAsync("PokedexFlavorEntries", @"
+            ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+            ""SpeciesId"" INTEGER NOT NULL DEFAULT 0,
+            ""Language"" TEXT NOT NULL DEFAULT '',
+            ""GameVersion"" TEXT NOT NULL DEFAULT '',
+            ""Text"" TEXT NOT NULL DEFAULT '',
+            ""Source"" INTEGER NOT NULL DEFAULT 0,
+            ""CachedAt"" TEXT NOT NULL DEFAULT '2026-01-01T00:00:00Z'");
+
+        // Pokédex locations
+        await EnsureTableAsync("PokedexLocations", @"
+            ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+            ""SpeciesId"" INTEGER NOT NULL DEFAULT 0,
+            ""Game"" TEXT NOT NULL DEFAULT '',
+            ""Location"" TEXT NOT NULL DEFAULT '',
+            ""Method"" TEXT,
+            ""Source"" INTEGER NOT NULL DEFAULT 1,
+            ""CachedAt"" TEXT NOT NULL DEFAULT '2026-01-01T00:00:00Z'");
+
+        // Pokédex sprite provenance entries
+        await EnsureTableAsync("PokedexSpriteEntries", @"
+            ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+            ""SpeciesId"" INTEGER NOT NULL DEFAULT 0,
+            ""PokemonId"" INTEGER,
+            ""Generation"" INTEGER NOT NULL DEFAULT 0,
+            ""GameSlug"" TEXT NOT NULL DEFAULT '',
+            ""DisplayLabel"" TEXT NOT NULL DEFAULT '',
+            ""NormalLocalPath"" TEXT,
+            ""ShinyLocalPath"" TEXT,
+            ""BackLocalPath"" TEXT,
+            ""BackShinyLocalPath"" TEXT,
+            ""SourceUrl"" TEXT,
+            ""Source"" INTEGER NOT NULL DEFAULT 1,
+            ""SortOrder"" INTEGER NOT NULL DEFAULT 0,
+            ""CachedAt"" TEXT NOT NULL DEFAULT '2026-01-01T00:00:00Z'");
+        foreach (var sql in new[]
+        {
+            @"CREATE INDEX IF NOT EXISTS ""IX_PokedexSpriteEntries_PokemonId"" ON ""PokedexSpriteEntries"" (""PokemonId"")",
+            @"CREATE INDEX IF NOT EXISTS ""IX_PokedexSpriteEntries_SpeciesId_GameSlug"" ON ""PokedexSpriteEntries"" (""SpeciesId"", ""GameSlug"")"
+        })
+        {
+            using var cmd = patchConn.CreateCommand();
+            cmd.CommandText = sql;
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        // Cached images
+        await EnsureTableAsync("CachedImages", @"
+            ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+            ""SourceUrl"" TEXT NOT NULL DEFAULT '',
+            ""LocalPath"" TEXT NOT NULL DEFAULT '',
+            ""ImageType"" TEXT NOT NULL DEFAULT '',
+            ""SpeciesId"" INTEGER,
+            ""PokemonId"" INTEGER,
+            ""DownloadedAt"" TEXT NOT NULL DEFAULT '2026-01-01T00:00:00Z'");
     }
     catch (Exception ex)
     {
@@ -503,16 +607,23 @@ using (var scope = app.Services.CreateScope())
         Console.WriteLine("✅ Default admin user created (passwordless login).");
     }
 
-    var storage = scope.ServiceProvider.GetRequiredService<FileStorageService>();
-    storage.EnsureVault();
-
-    // Automatically scan for new files on startup
-    var fileWatcher = scope.ServiceProvider.GetRequiredService<FileWatcherService>();
-    var scanResult = await fileWatcher.ScanAndImportNewFilesAsync();
-    if (scanResult.NewlyImported.Any())
+    var skipStartupScan = app.Configuration.GetValue<bool>("BeastVault:SkipStartupScan");
+    if (!skipStartupScan)
     {
-        Console.WriteLine($"Startup scan: Imported {scanResult.NewlyImported.Count} new Pokemon files");
+        var storage = scope.ServiceProvider.GetRequiredService<FileStorageService>();
+        storage.EnsureVault();
+
+        // Automatically scan for new files on startup
+        var fileWatcher = scope.ServiceProvider.GetRequiredService<FileWatcherService>();
+        var scanResult = await fileWatcher.ScanAndImportNewFilesAsync();
+        if (scanResult.NewlyImported.Any())
+        {
+            Console.WriteLine($"Startup scan: Imported {scanResult.NewlyImported.Count} new Pokemon files");
+        }
     }
 }
 
 await app.RunAsync();
+
+// Enable WebApplicationFactory<Program> for integration tests
+public partial class Program { }

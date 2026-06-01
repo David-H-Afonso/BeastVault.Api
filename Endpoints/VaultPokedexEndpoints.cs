@@ -256,6 +256,159 @@ public static class VaultPokedexEndpoints
                 evolutionChainJson = chain?.ChainJson;
             }
 
+            // --- Enriched data ---
+
+            // Localized names from PokeAPI cache
+            var localizedNames = new List<DexLocalizedNameDto>();
+            string? japaneseName = null;
+            string? japaneseRomanized = null;
+            string? nameMeaning = null;
+
+            if (!string.IsNullOrEmpty(species.LocalizedNames))
+            {
+                try
+                {
+                    var names = JsonSerializer.Deserialize<List<JsonElement>>(species.LocalizedNames);
+                    if (names != null)
+                    {
+                        foreach (var n in names)
+                        {
+                            var lang = n.TryGetProperty("language", out var lp) ? lp.GetString() ?? "" : "";
+                            var name = n.TryGetProperty("name", out var np) ? np.GetString() ?? "" : "";
+                            if (!string.IsNullOrEmpty(lang) && !string.IsNullOrEmpty(name))
+                                localizedNames.Add(new DexLocalizedNameDto(lang, name));
+                        }
+                        // Extract Japanese name
+                        var ja = localizedNames.FirstOrDefault(n => n.Language == "ja" || n.Language == "ja-Hrkt");
+                        var jaRomaji = localizedNames.FirstOrDefault(n => n.Language == "roomaji");
+                        japaneseName = ja?.Name;
+                        japaneseRomanized = jaRomaji?.Name;
+                    }
+                }
+                catch { }
+            }
+
+            // Flavor entries from enrichment table. Prefer Bulbapedia when both sources provide the same game.
+            var flavorRows = await db.PokedexFlavorEntries
+                .AsNoTracking()
+                .Where(f => f.SpeciesId == speciesId)
+                .ToListAsync();
+            var flavorEntries = flavorRows
+                .GroupBy(f => new { f.Language, f.GameVersion })
+                .Select(g => g.OrderByDescending(f => f.Source == CacheSource.Bulbapedia).ThenByDescending(f => f.CachedAt).First())
+                .OrderBy(f => f.Language)
+                .ThenBy(f => GameSortOrder(f.GameVersion))
+                .ThenBy(f => f.GameVersion)
+                .Select(f => new DexFlavorEntryDto(f.Language, f.GameVersion, f.Text, f.Source.ToString()))
+                .ToList();
+
+            // Locations from enrichment table. Merge PokeAPI + Bulbapedia and dedupe exact normalized rows.
+            var locationRows = await db.PokedexLocations
+                .AsNoTracking()
+                .Where(l => l.SpeciesId == speciesId)
+                .ToListAsync();
+            var locations = locationRows
+                .GroupBy(l => $"{l.Game}|{l.Location}|{l.Method}")
+                .Select(g => g.OrderByDescending(l => l.Source == CacheSource.Bulbapedia).ThenByDescending(l => l.CachedAt).First())
+                .OrderBy(l => GameSortOrder(l.Game))
+                .ThenBy(l => l.Location)
+                .Select(l => new DexLocationDto(l.Game, l.Location, l.Method, l.Source.ToString()))
+                .ToList();
+
+            // All forms for this species
+            var allForms = await db.PokedexPokemon
+                .AsNoTracking()
+                .Where(p => p.SpeciesId == speciesId)
+                .OrderBy(p => p.PokemonId)
+                .ToListAsync();
+
+            var formDtos = allForms.Select(f =>
+            {
+                var fTypes = ParseStringArray(f.Types, "name");
+                object[] fAbilities;
+                try { fAbilities = JsonSerializer.Deserialize<object[]>(f.Abilities) ?? Array.Empty<object>(); }
+                catch { fAbilities = Array.Empty<object>(); }
+                var fSprites = PokemonSpritesDto.ForPokemonId(f.PokemonId, f.Name);
+                return new DexFormDto(f.PokemonId, f.Name, f.IsDefault, fTypes, fAbilities, fSprites);
+            }).ToList();
+
+            // Sprites by generation — prefer normalized Bulbapedia local sprites, then local PokeAPI fallback routes.
+            var spritesByGen = new List<DexGenerationSpritesDto>();
+            var normalizedSprites = await db.PokedexSpriteEntries
+                .AsNoTracking()
+                .Where(s => s.SpeciesId == speciesId)
+                .OrderBy(s => s.SortOrder)
+                .ToListAsync();
+
+            if (normalizedSprites.Count > 0)
+            {
+                spritesByGen.AddRange(normalizedSprites.Select(s => new DexGenerationSpritesDto(
+                    s.Generation,
+                    s.DisplayLabel,
+                    s.NormalLocalPath,
+                    s.ShinyLocalPath,
+                    s.BackLocalPath,
+                    s.BackShinyLocalPath,
+                    s.Source.ToString()
+                )));
+            }
+            else if (defaultForm != null && !string.IsNullOrEmpty(defaultForm.Sprites))
+            {
+                try
+                {
+                    var doc = JsonDocument.Parse(defaultForm.Sprites);
+                    if (doc.RootElement.TryGetProperty("versions", out var versions))
+                    {
+                        int genNum = 0;
+                        foreach (var gen in versions.EnumerateObject())
+                        {
+                            genNum++;
+                            foreach (var game in gen.Value.EnumerateObject())
+                            {
+                                string? normal = null, shiny = null, back = null, backShiny = null;
+                                if (game.Value.TryGetProperty("front_default", out var fd) && fd.ValueKind == JsonValueKind.String)
+                                    normal = fd.GetString();
+                                if (game.Value.TryGetProperty("front_shiny", out var fs) && fs.ValueKind == JsonValueKind.String)
+                                    shiny = fs.GetString();
+                                if (game.Value.TryGetProperty("back_default", out var bd) && bd.ValueKind == JsonValueKind.String)
+                                    back = bd.GetString();
+                                if (game.Value.TryGetProperty("back_shiny", out var bs) && bs.ValueKind == JsonValueKind.String)
+                                    backShiny = bs.GetString();
+
+                                if (normal != null || shiny != null)
+                                {
+                                    var localNormal = BuildVersionSpriteRoute(defaultForm.PokemonId, game.Name, "front", normal);
+                                    var localShiny = BuildVersionSpriteRoute(defaultForm.PokemonId, game.Name, "shiny", shiny);
+                                    var localBack = BuildVersionSpriteRoute(defaultForm.PokemonId, game.Name, "back", back);
+                                    var localBackShiny = BuildVersionSpriteRoute(defaultForm.PokemonId, game.Name, "back-shiny", backShiny);
+                                    spritesByGen.Add(new DexGenerationSpritesDto(
+                                        genNum, game.Name, localNormal, localShiny, localBack, localBackShiny, "PokeApi"));
+                                }
+                            }
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            // Bulbapedia cache status
+            var bulbCache = await db.BulbapediaCache
+                .AsNoTracking()
+                .FirstOrDefaultAsync(b => b.SpeciesId == speciesId);
+
+            var cacheStatus = new DexCacheStatusDto(
+                PokeApiCached: species != null,
+                BulbapediaCached: bulbCache != null,
+                BulbapediaStatus: bulbCache?.Status.ToString(),
+                BulbapediaNormalized: bulbCache?.NormalizedStatus == ParseStatus.Success,
+                BulbapediaNormalizedStatus: bulbCache?.NormalizedStatus.ToString(),
+                BulbapediaEntriesCount: bulbCache?.EntriesCount ?? 0,
+                BulbapediaLocationsCount: bulbCache?.LocationsCount ?? 0,
+                BulbapediaSpritesCount: bulbCache?.SpritesCount ?? 0
+            );
+
+            nameMeaning = bulbCache?.NameMeaning;
+
             var detail = new DexSpeciesDetailDto(
                 species.SpeciesId,
                 species.Name,
@@ -277,7 +430,16 @@ public static class VaultPokedexEndpoints
                 sprites,
                 owned.Count > 0,
                 owned,
-                evolutionChainJson
+                evolutionChainJson,
+                localizedNames,
+                japaneseName,
+                japaneseRomanized,
+                nameMeaning,
+                flavorEntries,
+                locations,
+                spritesByGen,
+                formDtos,
+                cacheStatus
             );
 
             return Results.Ok(detail);
@@ -289,6 +451,13 @@ public static class VaultPokedexEndpoints
     }
 
     // ── Sprite URL helpers ────────────────────────────────────────────────────
+
+    private static string? BuildVersionSpriteRoute(int pokemonId, string gameSlug, string kind, string? externalUrl)
+    {
+        if (string.IsNullOrWhiteSpace(externalUrl)) return null;
+        var extension = externalUrl.Contains(".gif", StringComparison.OrdinalIgnoreCase) ? "gif" : "png";
+        return $"/sprites/pokemon/version/{pokemonId}/{gameSlug}/{kind}.{extension}";
+    }
 
     private static string? ExtractFrontDefault(string spritesJson)
     {
@@ -327,6 +496,58 @@ public static class VaultPokedexEndpoints
         }
         catch { }
         return null;
+    }
+
+    private static int GameSortOrder(string game)
+    {
+        var normalized = game.ToLowerInvariant();
+        return normalized switch
+        {
+            "red" => 10,
+            "green" => 11,
+            "blue" => 12,
+            "yellow" => 13,
+            "stadium" => 14,
+            "gold" => 20,
+            "silver" => 21,
+            "crystal" => 22,
+            "stadium-2" => 23,
+            "ruby" => 30,
+            "sapphire" => 31,
+            "emerald" => 32,
+            "firered" => 33,
+            "leafgreen" => 34,
+            "diamond" => 40,
+            "pearl" => 41,
+            "platinum" => 42,
+            "heartgold" => 43,
+            "soulsilver" => 44,
+            "black" => 50,
+            "white" => 51,
+            "black-2" => 52,
+            "white-2" => 53,
+            "x" => 60,
+            "y" => 61,
+            "omega-ruby" => 62,
+            "alpha-sapphire" => 63,
+            "sun" => 70,
+            "moon" => 71,
+            "ultra-sun" => 72,
+            "ultra-moon" => 73,
+            "lets-go-pikachu" => 74,
+            "lets-go-eevee" => 75,
+            "sword" => 80,
+            "shield" => 81,
+            "brilliant-diamond" => 82,
+            "shining-pearl" => 83,
+            "legends-arceus" => 84,
+            "scarlet" => 90,
+            "violet" => 91,
+            "legends-za" => 92,
+            "pokopia" => 93,
+            "mega-dimension" => 94,
+            _ => 999
+        };
     }
 
     private static string[] ParseStringArray(string json, string propertyName)

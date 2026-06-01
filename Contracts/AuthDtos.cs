@@ -31,10 +31,14 @@ public record UserPreferencesDto(
     string Theme,
     string ViewMode,
     string SpriteType,
-    string BackgroundType);
+    string BackgroundType,
+    string OrganizeDensity,
+    string KanbanDragMode);
 
 public record UpdatePreferencesRequest(
     string? Theme = null,
     string? ViewMode = null,
     string? SpriteType = null,
-    string? BackgroundType = null);
+    string? BackgroundType = null,
+    string? OrganizeDensity = null,
+    string? KanbanDragMode = null);

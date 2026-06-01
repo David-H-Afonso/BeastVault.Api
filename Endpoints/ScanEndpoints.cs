@@ -1,6 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using BeastVault.Api.Infrastructure;
 using BeastVault.Api.Infrastructure.Services;
 using BeastVault.Api.Helpers;
+using PKHeX.Core;
 
 namespace BeastVault.Api.Endpoints
 {
@@ -32,6 +35,11 @@ Supported file formats:
                 .WithName("GetScanStatus")
                 .WithSummary("Get information about the scan directory")
                 .WithDescription("Returns information about the Documents/BeastVault directory and file counts.");
+
+            group.MapPost("/refresh", RefreshPokemonData)
+                .WithName("RefreshPokemonData")
+                .WithSummary("Re-parse all stored Pokemon files and update metadata")
+                .WithDescription("Re-reads the raw PKM blobs from the database and updates friendship, met level, met location, and other fields that may have been incorrectly parsed previously.");
         }
 
         private static async Task<IResult> ScanDirectory(
@@ -137,6 +145,102 @@ Supported file formats:
                 ".ekx" => true,
                 _ => false
             };
+        }
+
+        private static async Task<IResult> RefreshPokemonData(
+            [FromServices] AppDbContext db,
+            HttpContext ctx)
+        {
+            var userId = ctx.GetUserId();
+            if (userId == null) return Results.Unauthorized();
+
+            // Get all pokemon for this user joined with their file blobs
+            var pokemonWithFiles = await db.Pokemon
+                .Where(p => p.UserId == userId)
+                .Join(db.Files.Where(f => f.RawBlob != null),
+                    p => p.FileId, f => f.Id,
+                    (p, f) => new { Pokemon = p, File = f })
+                .ToListAsync();
+
+            int updated = 0, errors = 0;
+
+            foreach (var pf in pokemonWithFiles)
+            {
+                var p = pf.Pokemon;
+                var rawBlob = pf.File.RawBlob;
+                if (rawBlob == null || rawBlob.Length == 0) continue;
+
+                try
+                {
+                    var pk = EntityFormat.GetFromBytes(rawBlob);
+                    if (pk == null) continue;
+
+                    // Update fields using Convert to handle byte/ushort/int differences
+                    var metLevelProp = pk.GetType().GetProperty("MetLevel") ?? pk.GetType().GetProperty("Met_Level");
+                    if (metLevelProp != null)
+                    {
+                        var val = metLevelProp.GetValue(pk);
+                        if (val != null) p.MetLevel = Convert.ToInt32(val);
+                    }
+
+                    var friendProp = pk.GetType().GetProperty("CurrentFriendship");
+                    if (friendProp != null)
+                    {
+                        var val = friendProp.GetValue(pk);
+                        if (val != null) p.CurrentFriendship = Convert.ToInt32(val);
+                    }
+
+                    var htFriendProp = pk.GetType().GetProperty("HandlingTrainerFriendship") ?? pk.GetType().GetProperty("HT_Friendship");
+                    if (htFriendProp != null)
+                    {
+                        var val = htFriendProp.GetValue(pk);
+                        if (val != null) p.HandlingTrainerFriendship = Convert.ToInt32(val);
+                    }
+
+                    var handlerProp = pk.GetType().GetProperty("CurrentHandler");
+                    if (handlerProp != null)
+                    {
+                        var val = handlerProp.GetValue(pk);
+                        if (val != null) p.CurrentHandler = Convert.ToInt32(val);
+                    }
+
+                    var metLocProp = pk.GetType().GetProperty("MetLocation") ?? pk.GetType().GetProperty("Met_Location");
+                    if (metLocProp != null)
+                    {
+                        var val = metLocProp.GetValue(pk);
+                        if (val != null)
+                        {
+                            var metLoc = Convert.ToInt32(val);
+                            if (metLoc > 0)
+                            {
+                                try
+                                {
+                                    var locationNames = GameInfo.GetLocationList((GameVersion)pk.Version, pk.Context, false);
+                                    var match = locationNames.FirstOrDefault(l => l.Value == metLoc);
+                                    p.MetLocation = match != null && !string.IsNullOrWhiteSpace(match.Text) ? match.Text : $"Location {metLoc}";
+                                }
+                                catch { p.MetLocation = $"Location {metLoc}"; }
+                            }
+                        }
+                    }
+
+                    updated++;
+                }
+                catch
+                {
+                    errors++;
+                }
+            }
+
+            await db.SaveChangesAsync();
+
+            return Results.Ok(new
+            {
+                message = $"Refreshed {updated} Pokémon, {errors} errors",
+                updated,
+                errors,
+                total = pokemonWithFiles.Count
+            });
         }
     }
 }

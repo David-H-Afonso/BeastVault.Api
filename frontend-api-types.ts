@@ -295,6 +295,14 @@ export interface StatsDto {
   statHpCurrent: number;
 }
 
+export type TagCategory =
+  | "Uncategorized"
+  | "Run"
+  | "Team"
+  | "Collection"
+  | "Personal"
+  | "Utility";
+
 export interface TagDto {
   /** ID único del tag */
   id: number;
@@ -304,16 +312,60 @@ export interface TagDto {
   imagePath?: string;
   /** Número de Pokémon que tienen este tag */
   pokemonCount: number;
+  /** Categoría del tag */
+  category: TagCategory;
+  /** Color hexadecimal del tag (opcional) */
+  colorHex?: string;
+  /** Orden de visualización */
+  sortOrder: number;
+  /** Descripción del tag (opcional) */
+  description?: string;
 }
 
 export interface CreateTagDto {
   /** Nombre del tag */
   name: string;
+  /** Categoría del tag */
+  category?: TagCategory;
+  /** Color hexadecimal */
+  colorHex?: string;
+  /** Descripción */
+  description?: string;
 }
 
 export interface UpdateTagDto {
   /** Nombre del tag */
   name: string;
+  /** Categoría del tag */
+  category?: TagCategory;
+  /** Color hexadecimal */
+  colorHex?: string;
+  /** Orden de visualización */
+  sortOrder?: number;
+  /** Descripción */
+  description?: string;
+}
+
+export interface BulkTagRequest {
+  /** IDs de Pokémon a los que aplicar las operaciones */
+  pokemonIds: number[];
+  /** Tag IDs a añadir */
+  addTagIds?: number[];
+  /** Tag IDs a eliminar */
+  removeTagIds?: number[];
+  /** Tag IDs que reemplazan todos los existentes */
+  replaceTagIds?: number[];
+  /** Incluir duplicados por SHA256 */
+  includeDuplicateFiles?: boolean;
+}
+
+export interface BulkTagResult {
+  /** Número de Pokémon afectados */
+  affectedPokemon: number;
+  /** Tags añadidos */
+  tagsAdded: number;
+  /** Tags eliminados */
+  tagsRemoved: number;
 }
 
 export interface MoveDto {
@@ -405,6 +457,33 @@ export interface PokemonDetailDto {
   stats?: StatsDto;
   moves: MoveDto[];
   relearnMoves: RelearnMoveDto[];
+
+  // Campos de display limpios (del PokemonDisplayMapper)
+  originGameName: string;
+  metLevel: number;
+  metLocationName?: string;
+  ballSpriteUrl: string;
+  heldItemSpriteUrl?: string;
+  displayFormName?: string;
+  personalityIdHex: string;
+  encryptionConstantHex: string;
+  effectiveFriendship: number;
+
+  // Nombres enriquecidos
+  speciesName: string;
+  formName: string;
+  natureName: string;
+  abilityName: string;
+  ballName: string;
+  genderName: string;
+  teraTypeName?: string;
+  languageName: string;
+  heldItemName: string;
+  otGenderName: string;
+  otLanguageName: string;
+  natureBoostedStat?: string;
+  natureReducedStat?: string;
+  originGeneration: number;
 }
 
 // ===================================
@@ -896,3 +975,29 @@ export type AllEndpoints = PokemonEndpoints &
  * 13. ORGANIZACIÓN API: Los endpoints están organizados por categorías
  *     (Pokemon, Import, Files, Tags, etc.) para mejor organización en Swagger/OpenAPI.
  */
+
+// ===================================
+// PREFERENCES
+// ===================================
+
+export type ViewMode = "grid" | "organize" | "box" | "kanban";
+export type OrganizeDensity = "compact" | "expanded";
+export type KanbanDragMode = "move" | "copy";
+
+export interface UserPreferencesDto {
+  theme: string;
+  viewMode: ViewMode;
+  spriteType: string;
+  backgroundType: string;
+  organizeDensity: OrganizeDensity;
+  kanbanDragMode: KanbanDragMode;
+}
+
+export interface UpdatePreferencesRequest {
+  theme?: string;
+  viewMode?: ViewMode;
+  spriteType?: string;
+  backgroundType?: string;
+  organizeDensity?: OrganizeDensity;
+  kanbanDragMode?: KanbanDragMode;
+}

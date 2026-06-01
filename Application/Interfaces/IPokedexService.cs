@@ -25,4 +25,5 @@ public interface IPokedexService
     Task<List<PokedexType>> GetAllTypesAsync();
     Task<PokedexEvolutionChain?> GetEvolutionChainAsync(int chainId);
     Task<PokedexEvolutionChain?> GetEvolutionChainBySpeciesAsync(int speciesId);
+    Task<(int flavorsFilled, int locationsFilled, int errors)> BackfillEntriesAndLocationsAsync(int startId = 1, int endId = 1025);
 }

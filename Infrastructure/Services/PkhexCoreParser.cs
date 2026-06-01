@@ -65,12 +65,13 @@ namespace BeastVault.Api.Infrastructure.Services
                 T GetProp<T>(string propName, T defaultValue = default(T)!)
                 {
                     var pi = pk.GetType().GetProperty(propName);
-                    if (pi != null && pi.PropertyType == typeof(T))
-                    {
-                        var val = pi.GetValue(pk);
-                        if (val is T t) return t;
-                    }
-                    return defaultValue;
+                    if (pi == null) return defaultValue;
+                    var val = pi.GetValue(pk);
+                    if (val == null) return defaultValue;
+                    if (val is T t) return t;
+                    // Handle numeric type conversions (byte→int, ushort→int, int→uint, etc.)
+                    try { return (T)Convert.ChangeType(val, typeof(T)); }
+                    catch { return defaultValue; }
                 }
 
                 // Helper to try multiple property names for fallback
@@ -106,6 +107,33 @@ namespace BeastVault.Api.Infrastructure.Services
                 var form = pk.Form;
                 var formArg = GetProp<uint>("FormArgument");
                 var metLoc = GetProp<int>("MetLocation", GetProp<int>("Met_Location"));
+                var metLevel = GetProp<int>("MetLevel", GetProp<int>("Met_Level"));
+
+                // Resolve friendship correctly — PKHeX stores as byte, not int
+                int friendship;
+                {
+                    var fpi = pk.GetType().GetProperty("CurrentFriendship");
+                    if (fpi != null)
+                    {
+                        var fval = fpi.GetValue(pk);
+                        friendship = fval is byte b ? b : fval is int i ? i : 0;
+                    }
+                    else friendship = 0;
+                }
+
+                // Resolve met location name via PKHeX
+                string? metLocationName = null;
+                if (metLoc > 0)
+                {
+                    try
+                    {
+                        var ctx = pk.Context;
+                        var locationNames = GameInfo.GetLocationList((GameVersion)pk.Version, ctx, false);
+                        var match = locationNames.FirstOrDefault(l => l.Value == metLoc);
+                        metLocationName = match != null && !string.IsNullOrWhiteSpace(match.Text) ? match.Text : null;
+                    }
+                    catch { }
+                }
 
                 var p = new PokemonEntity
                 {
@@ -125,7 +153,8 @@ namespace BeastVault.Api.Infrastructure.Services
                     OriginGame = (int)pk.Version,
                     Language = GetLanguageCode(pk.Language),
                     MetDate = BuildMetDate(pk.MetYear, pk.MetMonth, pk.MetDay),
-                    MetLocation = metLoc > 0 ? $"LOC#{metLoc}" : null,
+                    MetLocation = metLocationName ?? (metLoc > 0 ? $"Location {metLoc}" : null),
+                    MetLevel = metLevel,
                     SpriteKey = $"{pk.Species}_{(pk.IsShiny ? "s" : "n")}_{form}",
                     Favorite = GetProp<bool>("IsFavorite"),
                     Notes = null,
@@ -137,7 +166,7 @@ namespace BeastVault.Api.Infrastructure.Services
                     EncryptionConstant = GetProp<uint>("EncryptionConstant"),
                     PersonalityId = GetProp<uint>("PID"),
                     Experience = GetProp<uint>("EXP"),
-                    CurrentFriendship = GetProp<int>("CurrentFriendship"),
+                    CurrentFriendship = friendship,
                     Form = form,
                     FormArgument = formArg,
                     DynamaxLevel = GetProp<int>("DynamaxLevel"),

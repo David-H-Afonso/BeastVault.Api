@@ -1,5 +1,6 @@
 using BeastVault.Api.Domain.Entities;
 using BeastVault.Api.Infrastructure.Services;
+using BeastVault.Api.Application.Mapping;
 
 namespace BeastVault.Api.Contracts;
 
@@ -120,6 +121,17 @@ public record PokemonDetailDto
     public string? NatureReducedStat { get; init; }
     public int OriginGeneration { get; init; }
 
+    // Clean display fields — frontend renders these directly
+    public string OriginGameName { get; init; } = "";
+    public int MetLevel { get; init; }
+    public string? MetLocationName { get; init; }
+    public string BallSpriteUrl { get; init; } = "";
+    public string? HeldItemSpriteUrl { get; init; }
+    public string? DisplayFormName { get; init; }
+    public string PersonalityIdHex { get; init; } = "";
+    public string EncryptionConstantHex { get; init; } = "";
+    public int EffectiveFriendship { get; init; }
+
     public uint EncryptionConstant { get; init; }
     public uint PersonalityId { get; init; }
     public uint Experience { get; init; }
@@ -190,6 +202,17 @@ public record PokemonDetailDto
         OriginGeneration = !string.IsNullOrEmpty(fileFormat)
             ? PokemonGameInfoService.GetCapturedGeneration(p.OriginGame, fileFormat)
             : PokemonGameInfoService.GetSpeciesOriginGeneration(p.SpeciesId);
+
+        // Clean display fields via mapper
+        OriginGameName = PokemonDisplayMapper.ResolveOriginGameName(p.OriginGame);
+        MetLevel = p.MetLevel;
+        MetLocationName = p.MetLocation;
+        BallSpriteUrl = PokemonDisplayMapper.ResolveBallSpriteUrl(p.BallId, BallName);
+        HeldItemSpriteUrl = PokemonDisplayMapper.ResolveHeldItemSpriteUrl(p.HeldItemId, HeldItemName);
+        DisplayFormName = PokemonDisplayMapper.ResolveDisplayFormName(p.SpeciesId, p.Form, FormName, p.CanGigantamax, p.HeldItemId);
+        PersonalityIdHex = PokemonDisplayMapper.FormatPidHex(p.PersonalityId);
+        EncryptionConstantHex = PokemonDisplayMapper.FormatEcHex(p.EncryptionConstant);
+        EffectiveFriendship = PokemonDisplayMapper.ResolveEffectiveFriendship(p);
 
         EncryptionConstant = p.EncryptionConstant;
         PersonalityId = p.PersonalityId;
