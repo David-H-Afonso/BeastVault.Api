@@ -32,6 +32,7 @@ public record UserPreferencesDto(
     string ViewMode,
     string SpriteType,
     string BackgroundType,
+    string BrowseLayout,
     string OrganizeDensity,
     string KanbanDragMode);
 
@@ -40,5 +41,6 @@ public record UpdatePreferencesRequest(
     string? ViewMode = null,
     string? SpriteType = null,
     string? BackgroundType = null,
+    string? BrowseLayout = null,
     string? OrganizeDensity = null,
     string? KanbanDragMode = null);

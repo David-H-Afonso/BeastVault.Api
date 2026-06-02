@@ -36,6 +36,11 @@ public record AdvancedPokemonQuery
     public bool? IsShiny { get; init; }
 
     /// <summary>
+    /// Filter by favorite status.
+    /// </summary>
+    public bool? Favorite { get; init; }
+
+    /// <summary>
     /// Filter by form ID
     /// </summary>
     public int? Form { get; init; }
@@ -44,6 +49,21 @@ public record AdvancedPokemonQuery
     /// Filter by gender (0 = undefined, 1 = male, 2 = female)
     /// </summary>
     public int? Gender { get; init; }
+
+    /// <summary>
+    /// Filter Pokemon that can Gigantamax.
+    /// </summary>
+    public bool? CanGigantamax { get; init; }
+
+    /// <summary>
+    /// Filter Pokemon that are currently displayed as Mega-capable through held items.
+    /// </summary>
+    public bool? HasMegaStone { get; init; }
+
+    /// <summary>
+    /// Filter egg status.
+    /// </summary>
+    public bool? IsEgg { get; init; }
 
     #endregion
 
@@ -206,9 +226,38 @@ public record AdvancedPokemonQuery
     public string[]? AnyTagNames { get; init; }
 
     /// <summary>
+    /// Exclude Pokémon that have any of these tag IDs.
+    /// </summary>
+    public int[]? ExcludedTagIds { get; init; }
+
+    /// <summary>
     /// Filter Pokémon that have no tags
     /// </summary>
     public bool? HasNoTags { get; init; }
+
+    #endregion
+
+    #region Internal Search Helpers
+
+    /// <summary>
+    /// Internal species IDs resolved from text search.
+    /// </summary>
+    public int[]? SearchSpeciesIds { get; init; }
+
+    /// <summary>
+    /// Internal held item IDs resolved from text search.
+    /// </summary>
+    public int[]? SearchHeldItemIds { get; init; }
+
+    /// <summary>
+    /// Internal move IDs resolved from text search.
+    /// </summary>
+    public int[]? SearchMoveIds { get; init; }
+
+    /// <summary>
+    /// Optional explicit Pokemon IDs, used by box hydration.
+    /// </summary>
+    public int[]? PokemonIds { get; init; }
 
     #endregion
 

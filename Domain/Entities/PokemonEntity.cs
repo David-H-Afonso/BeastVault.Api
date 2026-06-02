@@ -74,6 +74,9 @@ public class PokemonEntity
     public int HandlingTrainerMemoryVariable { get; set; } = 0;
 
     public ICollection<PokemonTagEntity> PokemonTags { get; set; } = new List<PokemonTagEntity>();
+    public ICollection<MoveEntity> Moves { get; set; } = new List<MoveEntity>();
+    public ICollection<RelearnMoveEntity> RelearnMoves { get; set; } = new List<RelearnMoveEntity>();
+    public PokemonBoxSlotEntity? BoxSlot { get; set; }
     public FileEntity File { get; set; } = null!;
     public User User { get; set; } = null!;
 }

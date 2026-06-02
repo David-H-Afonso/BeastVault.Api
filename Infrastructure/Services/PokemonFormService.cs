@@ -44,6 +44,15 @@ public static class PokemonFormService
         return HasMegaStone(pokemon.SpeciesId, pokemon.HeldItemId);
     }
 
+    public static int[] GetMegaStoneItemIds()
+    {
+        return GetMegaStoneMapping()
+            .SelectMany(x => x.Value)
+            .Where(id => id > 0)
+            .Distinct()
+            .ToArray();
+    }
+
     /// <summary>
     /// Check if a Pokemon has a Mega Stone equipped
     /// </summary>

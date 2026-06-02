@@ -2,6 +2,7 @@ using System.Text.Json;
 using BeastVault.Api.Application.Interfaces;
 using BeastVault.Api.Contracts;
 using BeastVault.Api.Domain.Entities;
+using BeastVault.Api.Helpers;
 using BeastVault.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
@@ -324,9 +325,12 @@ public class PokedexService : IPokedexService
         foreach (var ft in data.GetProperty("flavor_text_entries").EnumerateArray())
         {
             if (ft.GetProperty("language").GetProperty("name").GetString() == "en")
-                flavorText = ft.GetProperty("flavor_text").GetString() ?? "";
+            {
+                var candidate = PokedexTextFilters.CleanFlavorText(ft.GetProperty("flavor_text").GetString());
+                if (PokedexTextFilters.IsDisplayableFlavorText(candidate))
+                    flavorText = candidate;
+            }
         }
-        flavorText = flavorText.Replace("\f", " ").Replace("\n", " ").Replace("  ", " ").Trim();
 
         var genUrl = data.GetProperty("generation").GetProperty("url").GetString() ?? "";
         var genStr = genUrl.TrimEnd('/').Split('/').Last();
@@ -470,17 +474,31 @@ public class PokedexService : IPokedexService
     /// <summary>
     /// Extracts all flavor_text_entries from PokeAPI species data and saves to PokedexFlavorEntries table.
     /// </summary>
-    private void SaveFlavorEntries(int speciesId, JsonElement speciesData)
+    private int SaveFlavorEntries(int speciesId, JsonElement speciesData)
     {
-        if (!speciesData.TryGetProperty("flavor_text_entries", out var entries)) return;
+        if (!speciesData.TryGetProperty("flavor_text_entries", out var entries)) return 0;
+
+        var existingKeys = _context.PokedexFlavorEntries
+            .Where(f => f.SpeciesId == speciesId && f.Source == CacheSource.PokeApi)
+            .Select(f => new { f.Language, f.GameVersion })
+            .ToList()
+            .Select(f => $"{PokedexTextFilters.NormalizeFlavorLanguage(f.Language)}|{f.GameVersion}")
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var added = 0;
 
         foreach (var ft in entries.EnumerateArray())
         {
-            var lang = ft.GetProperty("language").GetProperty("name").GetString() ?? "";
+            var lang = PokedexTextFilters.NormalizeFlavorLanguage(
+                ft.GetProperty("language").GetProperty("name").GetString());
+            if (!PokedexTextFilters.IsTargetFlavorLanguage(lang)) continue;
+
             var version = ft.GetProperty("version").GetProperty("name").GetString() ?? "";
-            var text = (ft.GetProperty("flavor_text").GetString() ?? "")
-                .Replace("\f", " ").Replace("\n", " ").Replace("  ", " ").Trim();
-            if (string.IsNullOrWhiteSpace(text)) continue;
+            var text = PokedexTextFilters.CleanFlavorText(ft.GetProperty("flavor_text").GetString());
+            if (!PokedexTextFilters.IsDisplayableFlavorText(text)) continue;
+
+            var key = $"{lang}|{version}";
+            if (!existingKeys.Add(key)) continue;
 
             _context.PokedexFlavorEntries.Add(new PokedexFlavorEntry
             {
@@ -490,7 +508,10 @@ public class PokedexService : IPokedexService
                 Text = text,
                 Source = CacheSource.PokeApi
             });
+            added++;
         }
+
+        return added;
     }
 
     /// <summary>
@@ -554,15 +575,24 @@ public class PokedexService : IPokedexService
                 var exists = await _context.PokedexEntries.AnyAsync(e => e.SpeciesId == speciesId);
                 if (!exists) continue;
 
-                // Check if flavor entries already exist
-                var hasFlavors = await _context.PokedexFlavorEntries.AnyAsync(f => f.SpeciesId == speciesId);
-                if (!hasFlavors)
+                var existingFlavorRows = await _context.PokedexFlavorEntries
+                    .AsNoTracking()
+                    .Where(f => f.SpeciesId == speciesId)
+                    .Select(f => new { f.Language, f.Text })
+                    .ToListAsync();
+                var existingFlavorLanguages = existingFlavorRows
+                    .Where(f => PokedexTextFilters.IsDisplayableFlavorText(f.Text))
+                    .Select(f => PokedexTextFilters.NormalizeFlavorLanguage(f.Language))
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var needsFlavors = PokedexTextFilters.TargetFlavorLanguages.Any(lang => !existingFlavorLanguages.Contains(lang));
+
+                if (needsFlavors)
                 {
                     var speciesData = await FetchJsonAsync($"{POKEAPI_BASE}/pokemon-species/{speciesId}");
                     if (speciesData != null)
                     {
-                        SaveFlavorEntries(speciesId, speciesData.Value);
-                        flavorsFilled++;
+                        var saved = SaveFlavorEntries(speciesId, speciesData.Value);
+                        if (saved > 0) flavorsFilled++;
                     }
                     await Task.Delay(100);
                 }
@@ -584,7 +614,7 @@ public class PokedexService : IPokedexService
                     }
                 }
 
-                if (!hasFlavors || !hasLocations)
+                if (needsFlavors || !hasLocations)
                     await _context.SaveChangesAsync();
             }
             catch (Exception ex)

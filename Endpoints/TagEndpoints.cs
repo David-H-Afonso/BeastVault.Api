@@ -108,7 +108,11 @@ namespace BeastVault.Api.Endpoints
                     Id = tag.Id,
                     Name = tag.Name,
                     ImagePath = tag.ImagePath,
-                    PokemonCount = pokemonCount
+                    PokemonCount = pokemonCount,
+                    Category = tag.Category.ToString(),
+                    ColorHex = tag.ColorHex,
+                    SortOrder = tag.SortOrder,
+                    Description = tag.Description
                 });
             }).WithTags("Tags").RequireAuthorization();
 
@@ -336,11 +340,15 @@ namespace BeastVault.Api.Endpoints
                     .Include(pt => pt.Tag)
                     .Select(pt => new TagDto
                     {
-                        Id = pt.Tag.Id,
-                        Name = pt.Tag.Name,
-                        ImagePath = pt.Tag.ImagePath,
-                        PokemonCount = 0 // Not relevant in this context
-                    })
+                    Id = pt.Tag.Id,
+                    Name = pt.Tag.Name,
+                    ImagePath = pt.Tag.ImagePath,
+                    PokemonCount = 0,
+                    Category = pt.Tag.Category.ToString(),
+                    ColorHex = pt.Tag.ColorHex,
+                    SortOrder = pt.Tag.SortOrder,
+                    Description = pt.Tag.Description
+                })
                     .OrderBy(t => t.Name)
                     .ToListAsync();
 
@@ -411,7 +419,11 @@ namespace BeastVault.Api.Endpoints
                         Id = pt.Tag.Id,
                         Name = pt.Tag.Name,
                         ImagePath = pt.Tag.ImagePath,
-                        PokemonCount = 0 // Not relevant in this context
+                        PokemonCount = 0,
+                        Category = pt.Tag.Category.ToString(),
+                        ColorHex = pt.Tag.ColorHex,
+                        SortOrder = pt.Tag.SortOrder,
+                        Description = pt.Tag.Description
                     })
                     .OrderBy(t => t.Name)
                     .ToListAsync();

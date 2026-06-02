@@ -3,7 +3,9 @@ namespace BeastVault.Api.Domain.Entities;
 public enum CacheSource
 {
     PokeApi = 0,
-    Bulbapedia = 1
+    Bulbapedia = 1,
+    WikiDex = 2,
+    JaWiki = 3
 }
 
 public enum ParseStatus

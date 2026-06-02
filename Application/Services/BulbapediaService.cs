@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using BeastVault.Api.Domain.Entities;
+using BeastVault.Api.Helpers;
 using BeastVault.Api.Infrastructure;
 using HtmlAgilityPack;
 using Microsoft.EntityFrameworkCore;
@@ -335,19 +336,11 @@ public class BulbapediaService : IBulbapediaService
         {
             var parameters = ParseTemplateParameters(template);
             if (!parameters.TryGetValue("entry", out var text)) continue;
-            text = CleanWikiText(text);
-            if (string.IsNullOrWhiteSpace(text)) continue;
+            text = PokedexTextFilters.CleanFlavorText(CleanWikiText(text));
+            if (!PokedexTextFilters.IsDisplayableFlavorText(text)) continue;
 
             foreach (var game in ExtractGames(parameters))
                 results.Add(new ParsedFlavor(game, text));
-        }
-
-        foreach (var template in ExtractTemplates(section, "Dex/NE"))
-        {
-            var parameters = ParseTemplateParameters(template);
-            var note = parameters.GetValueOrDefault("1") ?? "No Pokédex entry.";
-            var text = $"No Pokédex entry in {CleanWikiText(note)}.";
-            results.Add(new ParsedFlavor("No Entry", text));
         }
 
         return results;
@@ -362,12 +355,18 @@ public class BulbapediaService : IBulbapediaService
         foreach (var template in ExtractTemplates(section, "Availability/Entry"))
         {
             var parameters = ParseTemplateParameters(template);
+            if (template.Contains("/None", StringComparison.OrdinalIgnoreCase)) continue;
+
             var area = parameters.GetValueOrDefault("area");
-            var method = CleanWikiText(area ?? (template.Contains("/None", StringComparison.OrdinalIgnoreCase) ? "Unobtainable" : ""));
-            if (string.IsNullOrWhiteSpace(method)) method = template.Contains("/None", StringComparison.OrdinalIgnoreCase) ? "Unobtainable" : null;
+            var method = CleanWikiText(area ?? "");
+            if (string.IsNullOrWhiteSpace(method)) method = null;
 
             foreach (var game in ExtractGames(parameters))
-                results.Add(new ParsedLocation(game, method ?? "Unobtainable", template.Contains("/None", StringComparison.OrdinalIgnoreCase) ? "Unavailable" : null));
+            {
+                var location = method ?? "";
+                if (PokedexTextFilters.IsDisplayableLocation(location, null))
+                    results.Add(new ParsedLocation(game, location, null));
+            }
         }
 
         return results;

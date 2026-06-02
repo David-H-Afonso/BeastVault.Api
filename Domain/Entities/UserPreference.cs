@@ -7,6 +7,7 @@ public class UserPreference
     public string ViewMode { get; set; } = "grid";
     public string SpriteType { get; set; } = "sprites";
     public string BackgroundType { get; set; } = "diagonal-45";
+    public string BrowseLayout { get; set; } = "list";
     public string OrganizeDensity { get; set; } = "expanded";
     public string KanbanDragMode { get; set; } = "move";
 

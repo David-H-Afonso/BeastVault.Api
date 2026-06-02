@@ -14,6 +14,8 @@ namespace BeastVault.Api.Infrastructure
         public DbSet<RelearnMoveEntity> RelearnMoves => Set<RelearnMoveEntity>();
         public DbSet<TagEntity> Tags => Set<TagEntity>();
         public DbSet<PokemonTagEntity> PokemonTags => Set<PokemonTagEntity>();
+        public DbSet<PokemonBoxEntity> PokemonBoxes => Set<PokemonBoxEntity>();
+        public DbSet<PokemonBoxSlotEntity> PokemonBoxSlots => Set<PokemonBoxSlotEntity>();
         public DbSet<FileTagEntity> FileTags => Set<FileTagEntity>();
         public DbSet<User> Users => Set<User>();
         public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
@@ -91,6 +93,16 @@ namespace BeastVault.Api.Infrastructure
             b.Entity<StatsEntity>().HasKey(x => x.PokemonId);
             b.Entity<MoveEntity>().HasKey(x => new { x.PokemonId, x.Slot });
             b.Entity<RelearnMoveEntity>().HasKey(x => new { x.PokemonId, x.Slot });
+            b.Entity<MoveEntity>()
+                .HasOne<PokemonEntity>()
+                .WithMany(p => p.Moves)
+                .HasForeignKey(m => m.PokemonId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.Entity<RelearnMoveEntity>()
+                .HasOne<PokemonEntity>()
+                .WithMany(p => p.RelearnMoves)
+                .HasForeignKey(m => m.PokemonId)
+                .OnDelete(DeleteBehavior.Cascade);
 
             b.Entity<TagEntity>().HasKey(x => x.Id);
             b.Entity<TagEntity>().HasIndex(x => new { x.UserId, x.Name }).IsUnique();
@@ -123,6 +135,27 @@ namespace BeastVault.Api.Infrastructure
                 .HasOne(ft => ft.Tag)
                 .WithMany(t => t.FileTags)
                 .HasForeignKey(ft => ft.TagId);
+
+            b.Entity<PokemonBoxEntity>().HasKey(x => x.Id);
+            b.Entity<PokemonBoxEntity>().HasIndex(x => new { x.UserId, x.SortOrder });
+            b.Entity<PokemonBoxEntity>()
+                .HasOne(x => x.User)
+                .WithMany(u => u.PokemonBoxes)
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            b.Entity<PokemonBoxSlotEntity>().HasKey(x => new { x.BoxId, x.SlotIndex });
+            b.Entity<PokemonBoxSlotEntity>().HasIndex(x => x.PokemonId).IsUnique();
+            b.Entity<PokemonBoxSlotEntity>()
+                .HasOne(x => x.Box)
+                .WithMany(bx => bx.Slots)
+                .HasForeignKey(x => x.BoxId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.Entity<PokemonBoxSlotEntity>()
+                .HasOne(x => x.Pokemon)
+                .WithOne(p => p.BoxSlot)
+                .HasForeignKey<PokemonBoxSlotEntity>(x => x.PokemonId)
+                .OnDelete(DeleteBehavior.Cascade);
 
             // Bulbapedia and enrichment entities
             b.Entity<BulbapediaCache>().HasKey(x => x.Id);

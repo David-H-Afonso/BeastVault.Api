@@ -39,7 +39,16 @@ public static class PokemonQueryService
         // Text search
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
-            specifications.Add(new TextSearchSpecification(query.Search));
+            specifications.Add(new TextSearchSpecification(
+                query.Search,
+                query.SearchSpeciesIds,
+                query.SearchHeldItemIds,
+                query.SearchMoveIds));
+        }
+
+        if (query.PokemonIds?.Length > 0)
+        {
+            specifications.Add(new PokemonIdsSpecification(query.PokemonIds));
         }
 
         // Pokedex number 
@@ -66,6 +75,11 @@ public static class PokemonQueryService
             specifications.Add(new ShinySpecification(query.IsShiny.Value));
         }
 
+        if (query.Favorite.HasValue)
+        {
+            specifications.Add(new FavoriteSpecification(query.Favorite.Value));
+        }
+
         // Form
         if (query.Form.HasValue)
         {
@@ -76,6 +90,21 @@ public static class PokemonQueryService
         if (query.Gender.HasValue)
         {
             specifications.Add(new GenderSpecification(query.Gender.Value));
+        }
+
+        if (query.CanGigantamax.HasValue)
+        {
+            specifications.Add(new CanGigantamaxSpecification(query.CanGigantamax.Value));
+        }
+
+        if (query.HasMegaStone.HasValue)
+        {
+            specifications.Add(new HasMegaStoneSpecification(query.HasMegaStone.Value));
+        }
+
+        if (query.IsEgg.HasValue)
+        {
+            specifications.Add(new EggSpecification(query.IsEgg.Value));
         }
 
         // Origin generation
@@ -144,6 +173,11 @@ public static class PokemonQueryService
         if (query.AnyTagNames?.Length > 0)
         {
             specifications.Add(new AnyTagNamesSpecification(query.AnyTagNames));
+        }
+
+        if (query.ExcludedTagIds?.Length > 0)
+        {
+            specifications.Add(new ExcludedTagsSpecification(query.ExcludedTagIds));
         }
 
         if (query.HasNoTags == true)

@@ -21,6 +21,11 @@ public record PokemonQuery
 
 public record PagedResult<T>(IReadOnlyList<T> Items, int Total);
 
+public record PokemonListResponseDto(
+    IReadOnlyList<PokemonListItemDto> Items,
+    int Total,
+    object? Stats = null);
+
 public record PokemonListItemDto
 {
     public int Id { get; init; }
@@ -31,6 +36,8 @@ public record PokemonListItemDto
     public string? Nickname { get; init; }
     public int Level { get; init; }
     public bool IsShiny { get; init; }
+    public bool Favorite { get; init; }
+    public bool IsEgg { get; init; }
     public int BallId { get; init; }
     public int? TeraType { get; init; }
     public int HeldItemId { get; init; }
@@ -48,6 +55,50 @@ public record PokemonListItemDto
     public string BallName { get; init; } = "";
     public string BallSpriteUrl { get; init; } = "";
     public PokemonSpritesDto? Sprites { get; init; }
+
+    /// <summary>True if this Pokémon occupies a slot in any box.</summary>
+    public bool IsBoxed { get; init; }
+}
+
+public record PokemonBoxSummaryDto
+{
+    public int Id { get; init; }
+    public string Name { get; init; } = "";
+    public int SortOrder { get; init; }
+    public int PokemonCount { get; init; }
+}
+
+public record PokemonBoxSlotDto
+{
+    public int SlotIndex { get; init; }
+    public PokemonListItemDto Pokemon { get; init; } = new();
+}
+
+public record PokemonBoxDetailDto
+{
+    public int Id { get; init; }
+    public string Name { get; init; } = "";
+    public int SortOrder { get; init; }
+    public int PokemonCount { get; init; }
+    public IReadOnlyList<PokemonBoxSlotDto> Slots { get; init; } = Array.Empty<PokemonBoxSlotDto>();
+}
+
+public record CreatePokemonBoxRequest
+{
+    public string Name { get; init; } = "";
+}
+
+public record UpdatePokemonBoxRequest
+{
+    public string? Name { get; init; }
+    public int? SortOrder { get; init; }
+}
+
+public record MovePokemonBoxSlotRequest
+{
+    public int PokemonId { get; init; }
+    public int TargetBoxId { get; init; }
+    public int TargetSlotIndex { get; init; }
 }
 
 public record PokemonSpritesDto

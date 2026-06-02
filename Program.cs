@@ -114,6 +114,22 @@ builder.Services.AddHttpClient("Bulbapedia", client =>
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
+// WikiDex service + HttpClient (Spanish partner wiki for Gen 1–9 flavor text)
+builder.Services.AddScoped<IWikidexService, WikidexService>();
+builder.Services.AddHttpClient("Wikidex", client =>
+{
+    client.DefaultRequestHeaders.Add("User-Agent", "BeastVault/1.0 (Pokemon collection app)");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+
+// JaWiki service + HttpClient (Japanese partner wiki for Gen 1–9 flavor text)
+builder.Services.AddScoped<IJaWikiService, JaWikiService>();
+builder.Services.AddHttpClient("JaWiki", client =>
+{
+    client.DefaultRequestHeaders.Add("User-Agent", "BeastVault/1.0 (Pokemon collection app)");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+
 // CORS — read comma-separated origins from CORS_ALLOWED_ORIGINS env var
 var corsOriginsRaw = Environment.GetEnvironmentVariable("CORS_ALLOWED_ORIGINS");
 if (!string.IsNullOrWhiteSpace(corsOriginsRaw))
@@ -181,6 +197,7 @@ app.MapSpriteEndpoints();
 app.MapImportEndpoints();
 app.MapPokemonEndpoints();
 app.MapTagEndpoints();
+app.MapBoxesEndpoints();
 app.MapFilesEndpoints();
 app.MapScanEndpoints();
 app.MapMaintenanceEndpoints();
@@ -199,7 +216,10 @@ using (var scope = app.Services.CreateScope())
         await db.Database.MigrateAsync();
         Console.WriteLine("✅ Base de datos migrada correctamente.");
     }
-    catch (Exception ex) when (ex.Message.Contains("already exists"))
+    catch (Exception ex) when (
+        ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase) ||
+        ex.Message.Contains("duplicate column", StringComparison.OrdinalIgnoreCase) ||
+        ex.Message.Contains("duplicate table", StringComparison.OrdinalIgnoreCase))
     {
         // Pre-existing database without migration history (like Games Database pattern).
         // Tables exist but EF can't apply migrations. Repair schema manually.
@@ -374,7 +394,8 @@ using (var scope = app.Services.CreateScope())
             "20260527160000_AddSpriteDataBlobs",
             "20260527162000_AddHomeSpriteColumns",
             "20260531140436_SyncSchemaWithMetLevel",
-            "20260531202009_BulbapediaNormalization" })
+            "20260531202009_BulbapediaNormalization",
+            "20260601174120_AddPokemonBoxes" })
         {
             using var cmd = conn.CreateCommand();
             cmd.CommandText = $@"INSERT OR IGNORE INTO ""__EFMigrationsHistory"" (""MigrationId"", ""ProductVersion"") VALUES ('{mig}', '9.0.8')";
@@ -405,6 +426,15 @@ using (var scope = app.Services.CreateScope())
 
         async Task EnsureColumnAsync(string table, string column, string definition)
         {
+            using var tableCheck = patchConn.CreateCommand();
+            tableCheck.CommandText = $"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='{table}'";
+            var tableExists = Convert.ToInt64(await tableCheck.ExecuteScalarAsync()) > 0;
+            if (!tableExists)
+            {
+                Console.WriteLine($"  ⚠️ Column patch skipped: table {table} does not exist");
+                return;
+            }
+
             using var check = patchConn.CreateCommand();
             check.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name='{column}'";
             var exists = Convert.ToInt64(await check.ExecuteScalarAsync()) > 0;
@@ -425,10 +455,20 @@ using (var scope = app.Services.CreateScope())
             if (!exists)
             {
                 using var create = patchConn.CreateCommand();
-                create.CommandText = $"CREATE TABLE \"{table}\" ({columnsDdl})";
+                var ddl = columnsDdl.Trim();
+                create.CommandText = ddl.EndsWith(")")
+                    ? $"CREATE TABLE \"{table}\" ({ddl}"
+                    : $"CREATE TABLE \"{table}\" ({ddl})";
                 await create.ExecuteNonQueryAsync();
                 Console.WriteLine($"  ✅ Table patch: {table} created");
             }
+        }
+
+        async Task ExecutePatchSqlAsync(string sql)
+        {
+            using var cmd = patchConn.CreateCommand();
+            cmd.CommandText = sql;
+            await cmd.ExecuteNonQueryAsync();
         }
 
         await EnsureColumnAsync("Users", "CreatedAt", "TEXT NOT NULL DEFAULT '2026-01-01T00:00:00Z'");
@@ -574,8 +614,31 @@ using (var scope = app.Services.CreateScope())
         await EnsureColumnAsync("PokemonTags", "SortOrder", "INTEGER NOT NULL DEFAULT 0");
 
         // UserPreference new columns
+        await EnsureColumnAsync("UserPreferences", "BrowseLayout", "TEXT NOT NULL DEFAULT 'list'");
         await EnsureColumnAsync("UserPreferences", "OrganizeDensity", "TEXT NOT NULL DEFAULT 'expanded'");
         await EnsureColumnAsync("UserPreferences", "KanbanDragMode", "TEXT NOT NULL DEFAULT 'move'");
+
+        await EnsureTableAsync("PokemonBoxes", @"
+            ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+            ""UserId"" INTEGER NOT NULL,
+            ""Name"" TEXT NOT NULL DEFAULT 'Box',
+            ""SortOrder"" INTEGER NOT NULL DEFAULT 0,
+            ""CreatedAt"" TEXT NOT NULL DEFAULT '2026-01-01T00:00:00Z',
+            ""UpdatedAt"" TEXT NOT NULL DEFAULT '2026-01-01T00:00:00Z',
+            CONSTRAINT ""FK_PokemonBoxes_Users_UserId"" FOREIGN KEY (""UserId"") REFERENCES ""Users"" (""Id"") ON DELETE CASCADE)");
+
+        await EnsureTableAsync("PokemonBoxSlots", @"
+            ""BoxId"" INTEGER NOT NULL,
+            ""SlotIndex"" INTEGER NOT NULL,
+            ""PokemonId"" INTEGER NOT NULL,
+            ""CreatedAt"" TEXT NOT NULL DEFAULT '2026-01-01T00:00:00Z',
+            ""UpdatedAt"" TEXT NOT NULL DEFAULT '2026-01-01T00:00:00Z',
+            CONSTRAINT ""PK_PokemonBoxSlots"" PRIMARY KEY (""BoxId"", ""SlotIndex""),
+            CONSTRAINT ""FK_PokemonBoxSlots_PokemonBoxes_BoxId"" FOREIGN KEY (""BoxId"") REFERENCES ""PokemonBoxes"" (""Id"") ON DELETE CASCADE,
+            CONSTRAINT ""FK_PokemonBoxSlots_Pokemon_PokemonId"" FOREIGN KEY (""PokemonId"") REFERENCES ""Pokemon"" (""Id"") ON DELETE CASCADE)");
+
+        await ExecutePatchSqlAsync(@"CREATE INDEX IF NOT EXISTS ""IX_PokemonBoxes_UserId_SortOrder"" ON ""PokemonBoxes"" (""UserId"", ""SortOrder"")");
+        await ExecutePatchSqlAsync(@"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_PokemonBoxSlots_PokemonId"" ON ""PokemonBoxSlots"" (""PokemonId"")");
 
         // Bulbapedia cache table
         await EnsureTableAsync("BulbapediaCache", @"

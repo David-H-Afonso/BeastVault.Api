@@ -258,6 +258,8 @@ export interface PokemonListItemDto {
   canGigantamax: boolean;
   /** Si este Pokémon tiene una Mega Piedra equipada (afecta la visualización de la forma) */
   hasMegaStone: boolean;
+  /** Si este Pokémon ocupa un slot en alguna caja */
+  isBoxed: boolean;
 }
 
 export interface StatsDto {

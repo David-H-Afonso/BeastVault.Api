@@ -1,4 +1,6 @@
 using System.Text.Json;
+using BeastVault.Api.Application.Interfaces;
+using BeastVault.Api.Application.Services;
 using BeastVault.Api.Contracts;
 using BeastVault.Api.Domain.Entities;
 using BeastVault.Api.Helpers;
@@ -147,6 +149,9 @@ public static class VaultPokedexEndpoints
         dex.MapGet("{speciesId:int}", async (
             int speciesId,
             AppDbContext db,
+            IPokedexService pokedexService,
+            IWikidexService wikidexService,
+            IJaWikiService jaWikiService,
             HttpContext ctx) =>
         {
             var userId = ctx.GetUserId();
@@ -268,22 +273,32 @@ public static class VaultPokedexEndpoints
             {
                 try
                 {
-                    var names = JsonSerializer.Deserialize<List<JsonElement>>(species.LocalizedNames);
-                    if (names != null)
+                    using var namesDoc = JsonDocument.Parse(species.LocalizedNames);
+                    if (namesDoc.RootElement.ValueKind == JsonValueKind.Object)
                     {
-                        foreach (var n in names)
+                        foreach (var property in namesDoc.RootElement.EnumerateObject())
+                        {
+                            var lang = PokedexTextFilters.NormalizeFlavorLanguage(property.Name);
+                            var name = property.Value.GetString() ?? "";
+                            if (!string.IsNullOrEmpty(lang) && !string.IsNullOrEmpty(name))
+                                localizedNames.Add(new DexLocalizedNameDto(lang, name));
+                        }
+                    }
+                    else if (namesDoc.RootElement.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var n in namesDoc.RootElement.EnumerateArray())
                         {
                             var lang = n.TryGetProperty("language", out var lp) ? lp.GetString() ?? "" : "";
                             var name = n.TryGetProperty("name", out var np) ? np.GetString() ?? "" : "";
                             if (!string.IsNullOrEmpty(lang) && !string.IsNullOrEmpty(name))
-                                localizedNames.Add(new DexLocalizedNameDto(lang, name));
+                                localizedNames.Add(new DexLocalizedNameDto(PokedexTextFilters.NormalizeFlavorLanguage(lang), name));
                         }
-                        // Extract Japanese name
-                        var ja = localizedNames.FirstOrDefault(n => n.Language == "ja" || n.Language == "ja-Hrkt");
-                        var jaRomaji = localizedNames.FirstOrDefault(n => n.Language == "roomaji");
-                        japaneseName = ja?.Name;
-                        japaneseRomanized = jaRomaji?.Name;
                     }
+
+                    var ja = localizedNames.FirstOrDefault(n => n.Language == "ja");
+                    var jaRomaji = localizedNames.FirstOrDefault(n => n.Language == "roomaji");
+                    japaneseName = ja?.Name;
+                    japaneseRomanized = jaRomaji?.Name;
                 }
                 catch { }
             }
@@ -293,13 +308,60 @@ public static class VaultPokedexEndpoints
                 .AsNoTracking()
                 .Where(f => f.SpeciesId == speciesId)
                 .ToListAsync();
+
+            // Auto-backfill if Spanish or Japanese entries are missing (lazy per-species fetch)
+            var existingLangs = flavorRows
+                .Where(f => PokedexTextFilters.IsDisplayableFlavorText(f.Text))
+                .Select(f => PokedexTextFilters.NormalizeFlavorLanguage(f.Language))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var needsReload = false;
+
+            // PokeAPI backfill — covers English and Spanish/Japanese from Gen 6+
+            if (PokedexTextFilters.TargetFlavorLanguages.Any(l => !existingLangs.Contains(l)))
+            {
+                await pokedexService.BackfillEntriesAndLocationsAsync(speciesId, speciesId);
+                needsReload = true;
+            }
+
+            // WikiDex backfill — fills in Spanish for all generations (Gen 1–9).
+            // Run once per species: if no WikiDex-sourced entry exists yet, fetch now.
+            var hasWikiDexEs = flavorRows.Any(f => f.Source == CacheSource.WikiDex);
+            if (!hasWikiDexEs)
+            {
+                await wikidexService.FetchEsFlavorEntriesAsync(speciesId);
+                needsReload = true;
+            }
+
+            // JaWiki backfill — fills in Japanese for all generations (Gen 1–9).
+            // The wiki is Cloudflare-protected; returns 0 if blocked, succeeds otherwise.
+            var hasJaWiki = flavorRows.Any(f => f.Source == CacheSource.JaWiki);
+            if (!hasJaWiki)
+            {
+                await jaWikiService.FetchJaFlavorEntriesAsync(speciesId);
+                needsReload = true;
+            }
+
+            if (needsReload)
+            {
+                flavorRows = await db.PokedexFlavorEntries
+                    .AsNoTracking()
+                    .Where(f => f.SpeciesId == speciesId)
+                    .ToListAsync();
+            }
             var flavorEntries = flavorRows
-                .GroupBy(f => new { f.Language, f.GameVersion })
+                .Where(f => PokedexTextFilters.IsTargetFlavorLanguage(f.Language)
+                    && PokedexTextFilters.IsDisplayableFlavorText(f.Text))
+                .GroupBy(f => new { Language = PokedexTextFilters.NormalizeFlavorLanguage(f.Language), f.GameVersion })
                 .Select(g => g.OrderByDescending(f => f.Source == CacheSource.Bulbapedia).ThenByDescending(f => f.CachedAt).First())
-                .OrderBy(f => f.Language)
+                .OrderBy(f => PokedexTextFilters.NormalizeFlavorLanguage(f.Language))
                 .ThenBy(f => GameSortOrder(f.GameVersion))
                 .ThenBy(f => f.GameVersion)
-                .Select(f => new DexFlavorEntryDto(f.Language, f.GameVersion, f.Text, f.Source.ToString()))
+                .Select(f => new DexFlavorEntryDto(
+                    PokedexTextFilters.NormalizeFlavorLanguage(f.Language),
+                    f.GameVersion,
+                    PokedexTextFilters.CleanFlavorText(f.Text),
+                    f.Source.ToString()))
                 .ToList();
 
             // Locations from enrichment table. Merge PokeAPI + Bulbapedia and dedupe exact normalized rows.
@@ -308,6 +370,7 @@ public static class VaultPokedexEndpoints
                 .Where(l => l.SpeciesId == speciesId)
                 .ToListAsync();
             var locations = locationRows
+                .Where(l => PokedexTextFilters.IsDisplayableLocation(l.Location, l.Method))
                 .GroupBy(l => $"{l.Game}|{l.Location}|{l.Method}")
                 .Select(g => g.OrderByDescending(l => l.Source == CacheSource.Bulbapedia).ThenByDescending(l => l.CachedAt).First())
                 .OrderBy(l => GameSortOrder(l.Game))
@@ -408,23 +471,27 @@ public static class VaultPokedexEndpoints
             );
 
             nameMeaning = bulbCache?.NameMeaning;
+            var speciesDetailSource = species!;
+            var flavorText = PokedexTextFilters.IsDisplayableFlavorText(speciesDetailSource.FlavorText)
+                ? PokedexTextFilters.CleanFlavorText(speciesDetailSource.FlavorText)
+                : "";
 
             var detail = new DexSpeciesDetailDto(
-                species.SpeciesId,
-                species.Name,
-                species.FlavorText,
-                species.Genus,
-                species.Generation,
-                species.IsLegendary,
-                species.IsMythical,
-                species.IsBaby,
-                species.Color,
+                speciesDetailSource.SpeciesId,
+                speciesDetailSource.Name,
+                flavorText,
+                speciesDetailSource.Genus,
+                speciesDetailSource.Generation,
+                speciesDetailSource.IsLegendary,
+                speciesDetailSource.IsMythical,
+                speciesDetailSource.IsBaby,
+                speciesDetailSource.Color,
                 types,
                 abilities,
                 baseStats,
-                species.CaptureRate,
-                species.BaseHappiness,
-                species.GenderRate,
+                speciesDetailSource.CaptureRate,
+                speciesDetailSource.BaseHappiness,
+                speciesDetailSource.GenderRate,
                 eggGroups,
                 gameIndices,
                 sprites,

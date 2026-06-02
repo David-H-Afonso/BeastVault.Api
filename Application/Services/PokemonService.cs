@@ -22,8 +22,10 @@ public class PokemonService : IPokemonService
         _storage = storage;
     }
 
-    public async Task<object> GetPokemonListAsync(int userId, AdvancedPokemonQuery q)
+    public async Task<PokemonListResponseDto> GetPokemonListAsync(int userId, AdvancedPokemonQuery q)
     {
+        q = await ResolveSearchHelpersAsync(q);
+
         var baseQuery = _db.Pokemon.AsNoTracking()
             .Where(p => p.UserId == userId)
             .AsQueryable();
@@ -43,6 +45,8 @@ public class PokemonService : IPokemonService
                 Nickname = pf.Pokemon.Nickname,
                 Level = pf.Pokemon.Level,
                 IsShiny = pf.Pokemon.IsShiny,
+                Favorite = pf.Pokemon.Favorite,
+                IsEgg = pf.Pokemon.IsEgg,
                 BallId = pf.Pokemon.BallId,
                 TeraType = pf.Pokemon.TeraType,
                 HeldItemId = pf.Pokemon.HeldItemId,
@@ -68,11 +72,21 @@ public class PokemonService : IPokemonService
                     Id = pt.Tag.Id,
                     Name = pt.Tag.Name,
                     ImagePath = pt.Tag.ImagePath,
-                    PokemonCount = 0
+                    PokemonCount = 0,
+                    Category = pt.Tag.Category.ToString(),
+                    ColorHex = pt.Tag.ColorHex,
+                    SortOrder = pt.Tag.SortOrder,
+                    Description = pt.Tag.Description
                 })
                 .OrderBy(t => t.Name)
                 .ToList()
             );
+
+        // Batch-load box membership for the result set
+        var boxedPokemonIds = await _db.PokemonBoxSlots
+            .Where(s => pokemonIds.Contains(s.PokemonId))
+            .Select(s => s.PokemonId)
+            .ToHashSetAsync();
 
         // Batch-load Pokédex data for enrichment (types + sprites)
         var uniqueSpeciesIds = items.Select(i => i.SpeciesId).Distinct().ToList();
@@ -170,6 +184,8 @@ public class PokemonService : IPokemonService
                 Nickname = item.Nickname,
                 Level = item.Level,
                 IsShiny = item.IsShiny,
+                Favorite = item.Favorite,
+                IsEgg = item.IsEgg,
                 BallId = item.BallId,
                 TeraType = item.TeraType,
                 HeldItemId = item.HeldItemId,
@@ -184,13 +200,44 @@ public class PokemonService : IPokemonService
                 Type2 = type2,
                 BallName = ballName,
                 BallSpriteUrl = ballSpriteUrl,
-                Sprites = sprites
+                Sprites = sprites,
+                IsBoxed = boxedPokemonIds.Contains(item.Id)
             };
         }).ToList();
 
         var stats = PokemonQueryService.GetQueryStats(q);
 
-        return new { Items = resultItems, Total = total, Stats = stats };
+        return new PokemonListResponseDto(resultItems, total, stats);
+    }
+
+    private async Task<AdvancedPokemonQuery> ResolveSearchHelpersAsync(AdvancedPokemonQuery q)
+    {
+        if (string.IsNullOrWhiteSpace(q.Search))
+            return q;
+
+        var search = q.Search.Trim();
+        var speciesIds = PokemonGameInfoService.GetSpeciesIdsByName(search).Distinct().ToArray();
+
+        var itemIds = await _db.PokedexItems
+            .AsNoTracking()
+            .Where(i => i.Name.Contains(search) || i.DisplayName.Contains(search))
+            .Select(i => i.ItemId)
+            .Distinct()
+            .ToArrayAsync();
+
+        var moveIds = await _db.PokedexMoves
+            .AsNoTracking()
+            .Where(m => m.Name.Contains(search) || m.DisplayName.Contains(search))
+            .Select(m => m.MoveId)
+            .Distinct()
+            .ToArrayAsync();
+
+        return q with
+        {
+            SearchSpeciesIds = speciesIds,
+            SearchHeldItemIds = itemIds,
+            SearchMoveIds = moveIds
+        };
     }
 
     /// <summary>

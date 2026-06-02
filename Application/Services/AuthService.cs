@@ -145,9 +145,9 @@ public class AuthService : IAuthService
         var prefs = await _context.UserPreferences.FindAsync(userId);
         if (prefs == null)
         {
-            return new UserPreferencesDto("dark", "grid", "sprites", "diagonal-45", "expanded", "move");
+            return new UserPreferencesDto("dark", "browse", "sprites", "diagonal-45", "list", "expanded", "move");
         }
-        return new UserPreferencesDto(prefs.Theme, prefs.ViewMode, prefs.SpriteType, prefs.BackgroundType, prefs.OrganizeDensity, prefs.KanbanDragMode);
+        return new UserPreferencesDto(prefs.Theme, prefs.ViewMode, prefs.SpriteType, prefs.BackgroundType, prefs.BrowseLayout, prefs.OrganizeDensity, prefs.KanbanDragMode);
     }
 
     public async Task<UserPreferencesDto> UpdatePreferencesAsync(int userId, UpdatePreferencesRequest request)
@@ -163,11 +163,12 @@ public class AuthService : IAuthService
         if (request.ViewMode != null) prefs.ViewMode = request.ViewMode;
         if (request.SpriteType != null) prefs.SpriteType = request.SpriteType;
         if (request.BackgroundType != null) prefs.BackgroundType = request.BackgroundType;
+        if (request.BrowseLayout != null) prefs.BrowseLayout = request.BrowseLayout;
         if (request.OrganizeDensity != null) prefs.OrganizeDensity = request.OrganizeDensity;
         if (request.KanbanDragMode != null) prefs.KanbanDragMode = request.KanbanDragMode;
 
         await _context.SaveChangesAsync();
-        return new UserPreferencesDto(prefs.Theme, prefs.ViewMode, prefs.SpriteType, prefs.BackgroundType, prefs.OrganizeDensity, prefs.KanbanDragMode);
+        return new UserPreferencesDto(prefs.Theme, prefs.ViewMode, prefs.SpriteType, prefs.BackgroundType, prefs.BrowseLayout, prefs.OrganizeDensity, prefs.KanbanDragMode);
     }
 
     public string HashPassword(string password) =>

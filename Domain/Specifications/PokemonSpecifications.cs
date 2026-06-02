@@ -171,6 +171,69 @@ public class ShinySpecification : IPokemonSpecification
     }
 }
 
+public class FavoriteSpecification : IPokemonSpecification
+{
+    private readonly bool _favorite;
+
+    public FavoriteSpecification(bool favorite)
+    {
+        _favorite = favorite;
+    }
+
+    public IQueryable<PokemonEntity> Apply(IQueryable<PokemonEntity> query)
+    {
+        return query.Where(p => p.Favorite == _favorite);
+    }
+}
+
+public class CanGigantamaxSpecification : IPokemonSpecification
+{
+    private readonly bool _canGigantamax;
+
+    public CanGigantamaxSpecification(bool canGigantamax)
+    {
+        _canGigantamax = canGigantamax;
+    }
+
+    public IQueryable<PokemonEntity> Apply(IQueryable<PokemonEntity> query)
+    {
+        return query.Where(p => p.CanGigantamax == _canGigantamax);
+    }
+}
+
+public class HasMegaStoneSpecification : IPokemonSpecification
+{
+    private static readonly int[] MegaStoneItemIds = PokemonFormService.GetMegaStoneItemIds();
+    private readonly bool _hasMegaStone;
+
+    public HasMegaStoneSpecification(bool hasMegaStone)
+    {
+        _hasMegaStone = hasMegaStone;
+    }
+
+    public IQueryable<PokemonEntity> Apply(IQueryable<PokemonEntity> query)
+    {
+        return _hasMegaStone
+            ? query.Where(p => MegaStoneItemIds.Contains(p.HeldItemId))
+            : query.Where(p => !MegaStoneItemIds.Contains(p.HeldItemId));
+    }
+}
+
+public class EggSpecification : IPokemonSpecification
+{
+    private readonly bool _isEgg;
+
+    public EggSpecification(bool isEgg)
+    {
+        _isEgg = isEgg;
+    }
+
+    public IQueryable<PokemonEntity> Apply(IQueryable<PokemonEntity> query)
+    {
+        return query.Where(p => p.IsEgg == _isEgg);
+    }
+}
+
 /// <summary>
 /// Specification for filtering Pokemon by form
 /// </summary>
@@ -195,18 +258,48 @@ public class FormSpecification : IPokemonSpecification
 public class TextSearchSpecification : IPokemonSpecification
 {
     private readonly string _searchText;
+    private readonly int[] _speciesIds;
+    private readonly int[] _heldItemIds;
+    private readonly int[] _moveIds;
 
-    public TextSearchSpecification(string searchText)
+    public TextSearchSpecification(
+        string searchText,
+        int[]? speciesIds = null,
+        int[]? heldItemIds = null,
+        int[]? moveIds = null)
     {
         _searchText = searchText;
+        _speciesIds = speciesIds ?? Array.Empty<int>();
+        _heldItemIds = heldItemIds ?? Array.Empty<int>();
+        _moveIds = moveIds ?? Array.Empty<int>();
     }
 
     public IQueryable<PokemonEntity> Apply(IQueryable<PokemonEntity> query)
     {
         return query.Where(p =>
+            _speciesIds.Contains(p.SpeciesId) ||
+            _heldItemIds.Contains(p.HeldItemId) ||
+            p.PokemonTags.Any(pt => pt.Tag.Name.Contains(_searchText)) ||
+            p.Moves.Any(m => _moveIds.Contains(m.MoveId)) ||
+            p.RelearnMoves.Any(m => _moveIds.Contains(m.MoveId)) ||
             (p.Nickname ?? "").Contains(_searchText) ||
             p.OtName.Contains(_searchText) ||
             (p.Notes ?? "").Contains(_searchText));
+    }
+}
+
+public class PokemonIdsSpecification : IPokemonSpecification
+{
+    private readonly int[] _pokemonIds;
+
+    public PokemonIdsSpecification(int[] pokemonIds)
+    {
+        _pokemonIds = pokemonIds;
+    }
+
+    public IQueryable<PokemonEntity> Apply(IQueryable<PokemonEntity> query)
+    {
+        return query.Where(p => _pokemonIds.Contains(p.Id));
     }
 }
 
@@ -378,5 +471,20 @@ public class AnyTagNamesSpecification : IPokemonSpecification
     public IQueryable<PokemonEntity> Apply(IQueryable<PokemonEntity> query)
     {
         return query.Where(p => p.PokemonTags.Any(pt => _tagNames.Contains(pt.Tag.Name)));
+    }
+}
+
+public class ExcludedTagsSpecification : IPokemonSpecification
+{
+    private readonly int[] _tagIds;
+
+    public ExcludedTagsSpecification(int[] tagIds)
+    {
+        _tagIds = tagIds ?? throw new ArgumentNullException(nameof(tagIds));
+    }
+
+    public IQueryable<PokemonEntity> Apply(IQueryable<PokemonEntity> query)
+    {
+        return query.Where(p => !p.PokemonTags.Any(pt => _tagIds.Contains(pt.TagId)));
     }
 }
