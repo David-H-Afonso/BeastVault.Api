@@ -185,3 +185,8 @@ $RECYCLE.BIN/
 *.pb*
 *.ekx
 *.ek*
+
+# Local AI context
+AI_CONTEXT*.md
+AI_RULES.md
+AGENTS.md
