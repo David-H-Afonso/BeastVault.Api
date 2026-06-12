@@ -138,6 +138,43 @@ namespace BeastVault.Api.Endpoints
                     new { Id = 17, Name = "Fairy" }
                 };
                 var generations = Enumerable.Range(1, 9).Select(g => new { Id = g, Name = $"Generation {g}" }).ToList();
+                var pokeballs = new[]
+                {
+                    new { Id = 0, Name = "Poké Ball" },
+                    new { Id = 1, Name = "Master Ball" },
+                    new { Id = 2, Name = "Ultra Ball" },
+                    new { Id = 3, Name = "Great Ball" },
+                    new { Id = 4, Name = "Poké Ball" },
+                    new { Id = 5, Name = "Safari Ball" },
+                    new { Id = 6, Name = "Net Ball" },
+                    new { Id = 7, Name = "Dive Ball" },
+                    new { Id = 8, Name = "Nest Ball" },
+                    new { Id = 9, Name = "Repeat Ball" },
+                    new { Id = 10, Name = "Timer Ball" },
+                    new { Id = 11, Name = "Luxury Ball" },
+                    new { Id = 12, Name = "Premier Ball" },
+                    new { Id = 13, Name = "Dusk Ball" },
+                    new { Id = 14, Name = "Heal Ball" },
+                    new { Id = 15, Name = "Quick Ball" },
+                    new { Id = 16, Name = "Cherish Ball" },
+                    new { Id = 17, Name = "Fast Ball" },
+                    new { Id = 18, Name = "Level Ball" },
+                    new { Id = 19, Name = "Lure Ball" },
+                    new { Id = 20, Name = "Heavy Ball" },
+                    new { Id = 21, Name = "Love Ball" },
+                    new { Id = 22, Name = "Friend Ball" },
+                    new { Id = 23, Name = "Moon Ball" },
+                    new { Id = 24, Name = "Sport Ball" },
+                    new { Id = 25, Name = "Dream Ball" },
+                    new { Id = 26, Name = "Beast Ball" },
+                    new { Id = 27, Name = "Strange Ball" },
+                    new { Id = 28, Name = "Feather Ball" },
+                    new { Id = 29, Name = "Wing Ball" },
+                    new { Id = 30, Name = "Jet Ball" },
+                    new { Id = 31, Name = "Lead(en) Ball" },
+                    new { Id = 32, Name = "Gigaton Ball" },
+                    new { Id = 33, Name = "Origin Ball" }
+                };
 
                 // Temporarily disabled filters (not working properly):
                 // - Gender filter
@@ -179,6 +216,7 @@ namespace BeastVault.Api.Endpoints
                 return Results.Ok(new
                 {
                     Types = types,
+                    Pokeballs = pokeballs,
                     Generations = generations,
                     OriginGenerations = generations,
                     CapturedGenerations = generations,
