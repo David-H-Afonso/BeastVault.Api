@@ -113,6 +113,24 @@ namespace BeastVault.Api.Endpoints
             .Produces<object>(200)
             .RequireAuthorization();
 
+            // Per-tag match counts for the current search/filter context (faceted counts).
+            // Tag include/exclude filters are ignored so each tag shows how many of the
+            // current (search + non-tag filtered) matches belong to it.
+            app.MapGet("/pokemon/tag-counts", async (IPokemonService pokemonService, [AsParameters] AdvancedPokemonQuery q, HttpContext ctx) =>
+            {
+                var userId = ctx.GetUserId();
+                if (userId == null) return Results.Unauthorized();
+
+                var result = await pokemonService.GetTagFacetCountsAsync(userId.Value, q);
+                return Results.Ok(result);
+            })
+            .WithName("GetPokemonTagCounts")
+            .WithSummary("Get per-tag match counts for the current search/filters")
+            .WithDescription("Returns the total matches (ignoring tag selection) and a tagId→count map so tag tabs can reflect the active search and filters.")
+            .WithTags("Pokemon", "Tags")
+            .Produces<TagFacetCountsDto>(200)
+            .RequireAuthorization();
+
             // Metadata endpoint for frontend helpers
             app.MapGet("/pokemon/metadata", () =>
             {

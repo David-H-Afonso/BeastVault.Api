@@ -210,6 +210,43 @@ public class PokemonService : IPokemonService
         return new PokemonListResponseDto(resultItems, total, stats);
     }
 
+    public async Task<TagFacetCountsDto> GetTagFacetCountsAsync(int userId, AdvancedPokemonQuery q)
+    {
+        // Strip tag include/exclude filters and pagination so the counts reflect the
+        // current search + non-tag filters only. This answers "if I picked tag X,
+        // how many of my current matches would remain?" for every tag.
+        var facetQuery = q with
+        {
+            TagIds = null,
+            TagNames = null,
+            AnyTagIds = null,
+            AnyTagNames = null,
+            ExcludedTagIds = null,
+            HasNoTags = null,
+            Skip = 0,
+            Take = int.MaxValue
+        };
+
+        facetQuery = await ResolveSearchHelpersAsync(facetQuery);
+
+        var baseQuery = _db.Pokemon.AsNoTracking().Where(p => p.UserId == userId);
+        var filtered = PokemonQueryService.BuildQuery(baseQuery, facetQuery);
+
+        var matchingIds = await filtered.Select(p => p.Id).ToListAsync();
+
+        var counts = await _db.PokemonTags
+            .Where(pt => matchingIds.Contains(pt.PokemonId))
+            .GroupBy(pt => pt.TagId)
+            .Select(g => new { TagId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(g => g.TagId, g => g.Count);
+
+        return new TagFacetCountsDto
+        {
+            Total = matchingIds.Count,
+            Counts = counts
+        };
+    }
+
     private async Task<AdvancedPokemonQuery> ResolveSearchHelpersAsync(AdvancedPokemonQuery q)
     {
         if (string.IsNullOrWhiteSpace(q.Search))

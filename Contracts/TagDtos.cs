@@ -65,3 +65,15 @@ public record BulkTagResult
     public int TagsAdded { get; init; }
     public int TagsRemoved { get; init; }
 }
+
+/// <summary>
+/// Per-tag match counts for the current search/filter context.
+/// <see cref="Total"/> is the number of Pokémon matching the non-tag filters
+/// (search, generation, shiny, ball...) ignoring any tag selection, and
+/// <see cref="Counts"/> maps a tag id to how many of those matches carry that tag.
+/// </summary>
+public record TagFacetCountsDto
+{
+    public int Total { get; init; }
+    public Dictionary<int, int> Counts { get; init; } = new();
+}
