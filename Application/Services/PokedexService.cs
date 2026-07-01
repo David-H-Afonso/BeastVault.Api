@@ -820,8 +820,8 @@ public class PokedexService : IPokedexService
                     // Use direct SQL INSERT OR IGNORE to completely bypass EF change-tracking.
                     // EF Add+SaveChanges on a long-lived context can silently fail after any
                     // prior exception even with ChangeTracker.Clear().
-                    object? powerParam = move.Power.HasValue ? move.Power.Value : (object?)null;
-                    object? accuracyParam = move.Accuracy.HasValue ? move.Accuracy.Value : (object?)null;
+                    object powerParam = move.Power.HasValue ? move.Power.Value : DBNull.Value;
+                    object accuracyParam = move.Accuracy.HasValue ? move.Accuracy.Value : DBNull.Value;
                     await _context.Database.ExecuteSqlRawAsync(
                         "INSERT OR IGNORE INTO \"PokedexMoves\" " +
                         "(\"MoveId\",\"Name\",\"DisplayName\",\"Type\",\"DamageClass\",\"Power\",\"Accuracy\",\"PP\",\"Priority\",\"Effect\",\"FlavorText\",\"CachedAt\") " +
