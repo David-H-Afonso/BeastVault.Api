@@ -4,6 +4,7 @@ using BeastVault.Api.Infrastructure;
 using BeastVault.Api.Domain.Entities;
 using BeastVault.Api.Helpers;
 using BeastVault.Api.Application.Interfaces;
+using BeastVault.Api.Infrastructure.Configuration;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BeastVault.Api.Endpoints
@@ -18,18 +19,38 @@ namespace BeastVault.Api.Endpoints
             "image/gif"
         };
 
-        private static string GetTagImagePhysicalPath(string imagePath)
+        /// <summary>
+        /// Public URL prefix used for locally-stored tag images. Files are served
+        /// by the dedicated <c>GET /tags/images/{fileName}</c> endpoint.
+        /// </summary>
+        private const string TagImageUrlPrefix = "/tags/images/";
+
+        /// <summary>
+        /// Resolves the physical path on disk for a stored tag image URL.
+        /// Returns null for remote URLs or values that don't map to a managed location.
+        /// </summary>
+        private static string? GetTagImagePhysicalPath(string imagePath, StorageConfiguration storage)
         {
             var normalized = imagePath.Replace('\\', '/');
+
+            // Current scheme: served from the persistent tag-images directory.
+            if (normalized.StartsWith(TagImageUrlPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                var fileName = Path.GetFileName(normalized);
+                if (string.IsNullOrWhiteSpace(fileName)) return null;
+                return Path.Combine(storage.TagImagesDirectory, fileName);
+            }
+
+            // Legacy scheme (pre-fix): images written to wwwroot/tags.
             if (normalized.StartsWith("/tags/", StringComparison.OrdinalIgnoreCase))
             {
                 return Path.Combine("wwwroot", normalized.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
             }
 
-            return imagePath;
+            return null;
         }
 
-        private static void DeleteLocalTagImageIfExists(string? imagePath)
+        private static void DeleteLocalTagImageIfExists(string? imagePath, StorageConfiguration storage)
         {
             if (string.IsNullOrWhiteSpace(imagePath)) return;
             if (Uri.TryCreate(imagePath, UriKind.Absolute, out var uri) &&
@@ -38,8 +59,8 @@ namespace BeastVault.Api.Endpoints
                 return;
             }
 
-            var physicalPath = GetTagImagePhysicalPath(imagePath);
-            if (!File.Exists(physicalPath)) return;
+            var physicalPath = GetTagImagePhysicalPath(imagePath, storage);
+            if (string.IsNullOrEmpty(physicalPath) || !File.Exists(physicalPath)) return;
 
             try
             {
@@ -204,7 +225,7 @@ namespace BeastVault.Api.Endpoints
             }).WithTags("Tags").RequireAuthorization();
 
             // Delete a tag
-            app.MapDelete("/tags/{id:int}", async (int id, AppDbContext db, HttpContext ctx) =>
+            app.MapDelete("/tags/{id:int}", async (int id, AppDbContext db, StorageConfiguration storage, HttpContext ctx) =>
             {
                 var userId = ctx.GetUserId();
                 if (userId == null) return Results.Unauthorized();
@@ -220,7 +241,7 @@ namespace BeastVault.Api.Endpoints
 
                 db.PokemonTags.RemoveRange(pokemonTags);
 
-                DeleteLocalTagImageIfExists(tag.ImagePath);
+                DeleteLocalTagImageIfExists(tag.ImagePath, storage);
 
                 // Remove the tag
                 db.Tags.Remove(tag);
@@ -230,7 +251,7 @@ namespace BeastVault.Api.Endpoints
             }).WithTags("Tags").RequireAuthorization();
 
             // Upload tag image
-            app.MapPost("/tags/{id:int}/image", async (int id, [FromForm] IFormFile file, AppDbContext db, HttpContext ctx) =>
+            app.MapPost("/tags/{id:int}/image", async (int id, [FromForm] IFormFile file, AppDbContext db, StorageConfiguration storage, HttpContext ctx) =>
             {
                 var userId = ctx.GetUserId();
                 if (userId == null) return Results.Unauthorized();
@@ -245,11 +266,12 @@ namespace BeastVault.Api.Endpoints
                 if (!AllowedTagImageContentTypes.Contains(file.ContentType))
                     return Results.BadRequest("Only PNG, JPG, WebP, and GIF images are allowed");
 
-                // Create tags directory if it doesn't exist
-                var tagsDir = Path.Combine("wwwroot", "tags");
+                // Persist tag images under the managed (volume-backed) storage directory
+                // so they survive container recreation and can be served back over HTTP.
+                var tagsDir = storage.TagImagesDirectory;
                 Directory.CreateDirectory(tagsDir);
 
-                DeleteLocalTagImageIfExists(tag.ImagePath);
+                DeleteLocalTagImageIfExists(tag.ImagePath, storage);
 
                 var extension = file.ContentType.ToLowerInvariant() switch
                 {
@@ -269,7 +291,7 @@ namespace BeastVault.Api.Endpoints
                 }
 
                 // Update the tag
-                tag.ImagePath = $"/tags/{fileName}";
+                tag.ImagePath = $"{TagImageUrlPrefix}{fileName}";
                 await db.SaveChangesAsync();
 
                 var pokemonCount = await db.PokemonTags.CountAsync(pt => pt.TagId == id);
@@ -277,8 +299,37 @@ namespace BeastVault.Api.Endpoints
                 return Results.Ok(ToTagDto(tag, pokemonCount));
             }).DisableAntiforgery().WithTags("Tags").RequireAuthorization();
 
+            // Serve a locally-stored tag image. Anonymous so plain <img> requests work
+            // (the browser cannot attach the JWT bearer header to image element requests).
+            app.MapGet("/tags/images/{fileName}", (string fileName, StorageConfiguration storage) =>
+            {
+                // Guard against path traversal — only a bare file name is allowed.
+                var safeName = Path.GetFileName(fileName);
+                if (string.IsNullOrWhiteSpace(safeName) || !string.Equals(safeName, fileName, StringComparison.Ordinal))
+                    return Results.NotFound();
+
+                var rootFull = Path.GetFullPath(storage.TagImagesDirectory);
+                var fullPath = Path.GetFullPath(Path.Combine(rootFull, safeName));
+                if (!fullPath.StartsWith(rootFull + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+                    return Results.NotFound();
+
+                if (!File.Exists(fullPath))
+                    return Results.NotFound();
+
+                var contentType = Path.GetExtension(safeName).ToLowerInvariant() switch
+                {
+                    ".png" => "image/png",
+                    ".jpg" or ".jpeg" => "image/jpeg",
+                    ".webp" => "image/webp",
+                    ".gif" => "image/gif",
+                    _ => "application/octet-stream"
+                };
+
+                return Results.File(fullPath, contentType);
+            }).WithTags("Tags").AllowAnonymous();
+
             // Use a remote tag image URL
-            app.MapPut("/tags/{id:int}/image-url", async (int id, TagImageUrlRequest request, AppDbContext db, HttpContext ctx) =>
+            app.MapPut("/tags/{id:int}/image-url", async (int id, TagImageUrlRequest request, AppDbContext db, StorageConfiguration storage, HttpContext ctx) =>
             {
                 var userId = ctx.GetUserId();
                 if (userId == null) return Results.Unauthorized();
@@ -293,7 +344,7 @@ namespace BeastVault.Api.Endpoints
                     return Results.BadRequest("ImageUrl must be an absolute HTTP or HTTPS URL");
                 }
 
-                DeleteLocalTagImageIfExists(tag.ImagePath);
+                DeleteLocalTagImageIfExists(tag.ImagePath, storage);
                 tag.ImagePath = uri.ToString();
                 await db.SaveChangesAsync();
 
@@ -302,7 +353,7 @@ namespace BeastVault.Api.Endpoints
             }).WithTags("Tags").RequireAuthorization();
 
             // Delete tag image
-            app.MapDelete("/tags/{id:int}/image", async (int id, AppDbContext db, HttpContext ctx) =>
+            app.MapDelete("/tags/{id:int}/image", async (int id, AppDbContext db, StorageConfiguration storage, HttpContext ctx) =>
             {
                 var userId = ctx.GetUserId();
                 if (userId == null) return Results.Unauthorized();
@@ -314,7 +365,7 @@ namespace BeastVault.Api.Endpoints
                 if (string.IsNullOrEmpty(tag.ImagePath))
                     return Results.BadRequest("Tag has no image");
 
-                DeleteLocalTagImageIfExists(tag.ImagePath);
+                DeleteLocalTagImageIfExists(tag.ImagePath, storage);
 
                 // Update the tag
                 tag.ImagePath = null;

@@ -17,6 +17,7 @@ namespace BeastVault.Api.Infrastructure.Configuration
         public string DatabasePath { get; private set; } = string.Empty;
         public string PokemonFilesDirectory { get; private set; } = string.Empty;
         public string BackupDirectory { get; private set; } = string.Empty;
+        public string TagImagesDirectory { get; private set; } = string.Empty;
 
         // Información de entorno
         public bool IsDocker { get; private set; }
@@ -170,6 +171,10 @@ namespace BeastVault.Api.Infrastructure.Configuration
 
             // Configurar directorio de backup
             BackupDirectory = Path.Combine(PokemonFilesDirectory, "backup");
+
+            // Tag images live alongside the Pokémon files so they share the same
+            // persistent storage volume (e.g. /app/pokemon in Docker).
+            TagImagesDirectory = Path.Combine(PokemonFilesDirectory, "tag-images");
         }
 
         /// <summary>
@@ -194,6 +199,12 @@ namespace BeastVault.Api.Infrastructure.Configuration
                 Directory.CreateDirectory(BackupDirectory);
                 Console.WriteLine($"Created backup directory: {BackupDirectory}");
             }
+
+            if (!Directory.Exists(TagImagesDirectory))
+            {
+                Directory.CreateDirectory(TagImagesDirectory);
+                Console.WriteLine($"Created tag images directory: {TagImagesDirectory}");
+            }
         }
 
         /// <summary>
@@ -206,6 +217,7 @@ namespace BeastVault.Api.Infrastructure.Configuration
             Console.WriteLine($"Database Path: {DatabasePath}");
             Console.WriteLine($"Pokemon Files Directory: {PokemonFilesDirectory}");
             Console.WriteLine($"Backup Directory: {BackupDirectory}");
+            Console.WriteLine($"Tag Images Directory: {TagImagesDirectory}");
             Console.WriteLine("=======================================");
         }
 
@@ -265,10 +277,14 @@ namespace BeastVault.Api.Infrastructure.Configuration
             // Actualizar rutas
             PokemonFilesDirectory = newPath;
             BackupDirectory = Path.Combine(newPath, "backup");
+            TagImagesDirectory = Path.Combine(newPath, "tag-images");
 
             // Asegurar que el directorio de backup existe
             if (!Directory.Exists(BackupDirectory))
                 Directory.CreateDirectory(BackupDirectory);
+
+            if (!Directory.Exists(TagImagesDirectory))
+                Directory.CreateDirectory(TagImagesDirectory);
 
             Console.WriteLine($"Pokemon files path updated: {PokemonFilesDirectory}");
             Console.WriteLine($"Backup directory updated: {BackupDirectory}");
