@@ -31,6 +31,10 @@ namespace BeastVault.Api.Infrastructure
         public DbSet<PokedexLocation> PokedexLocations => Set<PokedexLocation>();
         public DbSet<CachedImage> CachedImages => Set<CachedImage>();
         public DbSet<PokedexSpriteEntry> PokedexSpriteEntries => Set<PokedexSpriteEntry>();
+        public DbSet<HouseholdConnection> HouseholdConnections => Set<HouseholdConnection>();
+        public DbSet<HouseholdAuthorizationCode> HouseholdAuthorizationCodes => Set<HouseholdAuthorizationCode>();
+        public DbSet<HouseholdAccessToken> HouseholdAccessTokens => Set<HouseholdAccessToken>();
+        public DbSet<HouseholdRefreshToken> HouseholdRefreshTokens => Set<HouseholdRefreshToken>();
 
         protected override void OnModelCreating(ModelBuilder b)
         {
@@ -174,6 +178,48 @@ namespace BeastVault.Api.Infrastructure
             b.Entity<PokedexSpriteEntry>().HasKey(x => x.Id);
             b.Entity<PokedexSpriteEntry>().HasIndex(x => new { x.SpeciesId, x.GameSlug });
             b.Entity<PokedexSpriteEntry>().HasIndex(x => x.PokemonId);
+
+            b.Entity<HouseholdConnection>().HasKey(x => x.Id);
+            b.Entity<HouseholdConnection>().HasIndex(x => new { x.UserId, x.ClientId });
+            b.Entity<HouseholdConnection>()
+                .HasOne(x => x.User)
+                .WithMany(x => x.HouseholdConnections)
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            b.Entity<HouseholdAuthorizationCode>().HasKey(x => x.Id);
+            b.Entity<HouseholdAuthorizationCode>().HasIndex(x => x.CodeHash).IsUnique();
+            b.Entity<HouseholdAuthorizationCode>().HasIndex(x => x.ExpiresAt);
+            b.Entity<HouseholdAuthorizationCode>()
+                .HasOne(x => x.Connection)
+                .WithMany(x => x.AuthorizationCodes)
+                .HasForeignKey(x => x.ConnectionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            b.Entity<HouseholdAccessToken>().HasKey(x => x.Id);
+            b.Entity<HouseholdAccessToken>().HasIndex(x => x.TokenHash).IsUnique();
+            b.Entity<HouseholdAccessToken>().HasIndex(x => new { x.ConnectionId, x.FamilyId });
+            b.Entity<HouseholdAccessToken>().HasIndex(x => x.ExpiresAt);
+            b.Entity<HouseholdAccessToken>()
+                .HasOne(x => x.Connection)
+                .WithMany(x => x.AccessTokens)
+                .HasForeignKey(x => x.ConnectionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            b.Entity<HouseholdRefreshToken>().HasKey(x => x.Id);
+            b.Entity<HouseholdRefreshToken>().HasIndex(x => x.TokenHash).IsUnique();
+            b.Entity<HouseholdRefreshToken>().HasIndex(x => new { x.ConnectionId, x.FamilyId });
+            b.Entity<HouseholdRefreshToken>().HasIndex(x => x.ExpiresAt);
+            b.Entity<HouseholdRefreshToken>()
+                .HasOne(x => x.Connection)
+                .WithMany(x => x.RefreshTokens)
+                .HasForeignKey(x => x.ConnectionId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.Entity<HouseholdRefreshToken>()
+                .HasOne(x => x.ReplacedByToken)
+                .WithMany()
+                .HasForeignKey(x => x.ReplacedByTokenId)
+                .OnDelete(DeleteBehavior.Restrict);
         }
     }
 }

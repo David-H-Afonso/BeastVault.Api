@@ -21,6 +21,23 @@ public record PokemonQuery
 
 public record PagedResult<T>(IReadOnlyList<T> Items, int Total);
 
+public record PokemonSummaryCountsDto(int Total, int Favorites, int Shiny, int Eggs);
+
+public record PokemonRecentImportDto(
+    int PokemonId,
+    int SpeciesId,
+    string SpeciesName,
+    string? Nickname,
+    DateTime ImportedAt,
+    string FileName);
+
+public record PokemonSummaryTagDto(int Id, string Name, int PokemonCount);
+
+public record PokemonSummaryDto(
+    PokemonSummaryCountsDto Counts,
+    IReadOnlyList<PokemonRecentImportDto> RecentImports,
+    IReadOnlyList<PokemonSummaryTagDto> Tags);
+
 public record PokemonListResponseDto(
     IReadOnlyList<PokemonListItemDto> Items,
     int Total,

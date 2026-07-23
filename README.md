@@ -163,11 +163,39 @@ Special thanks to the maintainers and contributors of these projects for their d
 - **Import Pokémon**: `POST /import` - Import .pk\* files
 - **Get Pokémon**: `GET /pokemon` - Retrieve Pokémon with filtering and pagination
 - **Pokémon Details**: `GET /pokemon/{id}` - Get detailed Pokémon information
+- **Pokémon Summary**: `GET /pokemon/summary` - Ownership-scoped counts, recent imports and tags
 - **Compare Pokémon**: `GET /pokemon/compare/{id1}/{id2}` - Compare two Pokémon
 - **Showdown Export**: `GET /pokemon/{id}/showdown` - Generate Showdown format
 - **Tags Management**: `GET/POST/PUT/DELETE /tags` - Manage custom tags
 - **File Operations**: `GET /files` - Browse and manage Pokémon files
 - **Auto Scan**: `POST /scan` - Automatically scan for new files
+
+### Household Connection Protocol v1
+
+Users begin at `/integrations/household/authorize`, sign in with their normal Beast
+Vault account, review the requested scopes, and approve or deny. Approval uses the
+normal JWT only for `POST /api/integrations/household/v1/authorize`. Household then
+exchanges the one-time authorization code with PKCE S256 at `/token`.
+
+Integration access and rotating refresh tokens are separate opaque credentials.
+Only their SHA-256 hashes are persisted. Access tokens expire after 15 minutes and
+refresh tokens after 30 days by default. Refresh reuse revokes that connection's
+token family. `/revoke` is idempotent and `/me` reports the connected account.
+
+Allowed scopes are `profile.read`, `pokemon.read`, `pokemon.favorite.write`, and
+`pokemon.notes.write`. Integration reads return narrow summary/list/detail fields.
+Writes are split between `PATCH /pokemon/{id}/favorite` and
+`PATCH /pokemon/{id}/notes`; the generic Pokémon PATCH remains normal-JWT-only.
+
+Server configuration uses an exact redirect allowlist (no wildcards):
+
+```text
+HOUSEHOLD_CLIENT_ID=household
+HOUSEHOLD_REDIRECT_URIS=https://household.example/api/integrations/callback/provider,http://localhost:5019/integrations/callback/provider
+HOUSEHOLD_ACCESS_TOKEN_MINUTES=15
+HOUSEHOLD_REFRESH_TOKEN_DAYS=30
+HOUSEHOLD_AUTHORIZATION_CODE_MINUTES=5
+```
 
 ### Supported File Formats
 
@@ -225,6 +253,11 @@ services:
       - ASPNETCORE_URLS=http://+:8080
       - BEASTVAULT_DB_PATH=/app/data/beastvault.db
       - BEASTVAULT_POKEMON_PATH=/app/pokemon
+      - HOUSEHOLD_CLIENT_ID=household
+      - HOUSEHOLD_REDIRECT_URIS=https://household.example/api/integrations/callback/provider
+      - HOUSEHOLD_ACCESS_TOKEN_MINUTES=15
+      - HOUSEHOLD_REFRESH_TOKEN_DAYS=30
+      - HOUSEHOLD_AUTHORIZATION_CODE_MINUTES=5
 
 volumes:
   beastvault-data:

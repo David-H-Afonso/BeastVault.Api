@@ -1,5 +1,7 @@
 using System.Text;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using BeastVault.Api.Configuration;
@@ -12,9 +14,34 @@ using BeastVault.Api.Infrastructure.Configuration;
 using BeastVault.Api.Middleware;
 using BeastVault.Api.Application.Interfaces;
 using BeastVault.Api.Application.Services;
+using BeastVault.Api.Security;
 using static BeastVault.Api.Endpoints.ConfigurationEndpoints;
 
 var builder = WebApplication.CreateBuilder(args);
+
+var householdClientIdEnv = Environment.GetEnvironmentVariable("HOUSEHOLD_CLIENT_ID");
+if (!string.IsNullOrWhiteSpace(householdClientIdEnv))
+    builder.Configuration["HouseholdIntegration:ClientId"] = householdClientIdEnv;
+
+var householdRedirectUrisEnv = Environment.GetEnvironmentVariable("HOUSEHOLD_REDIRECT_URIS");
+if (!string.IsNullOrWhiteSpace(householdRedirectUrisEnv))
+{
+    var redirectUris = householdRedirectUrisEnv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    for (var index = 0; index < redirectUris.Length; index++)
+        builder.Configuration[$"HouseholdIntegration:RedirectUris:{index}"] = redirectUris[index];
+}
+
+foreach (var (environmentName, configurationName) in new[]
+{
+    ("HOUSEHOLD_ACCESS_TOKEN_MINUTES", "AccessTokenMinutes"),
+    ("HOUSEHOLD_REFRESH_TOKEN_DAYS", "RefreshTokenDays"),
+    ("HOUSEHOLD_AUTHORIZATION_CODE_MINUTES", "AuthorizationCodeMinutes")
+})
+{
+    var value = Environment.GetEnvironmentVariable(environmentName);
+    if (!string.IsNullOrWhiteSpace(value))
+        builder.Configuration[$"HouseholdIntegration:{configurationName}"] = value;
+}
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -55,6 +82,17 @@ if (!string.IsNullOrWhiteSpace(jwtAccessMinEnv))
     builder.Configuration["JwtSettings:AccessTokenMinutes"] = jwtAccessMinEnv;
 
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection(JwtSettings.SectionName));
+builder.Services.AddOptions<HouseholdIntegrationSettings>()
+    .Bind(builder.Configuration.GetSection(HouseholdIntegrationSettings.SectionName))
+    .Validate(settings => !string.IsNullOrWhiteSpace(settings.ClientId), "Household ClientId is required.")
+    .Validate(settings => settings.RedirectUris.Length > 0, "At least one exact Household redirect URI is required.")
+    .Validate(settings => settings.RedirectUris.All(uri =>
+        Uri.TryCreate(uri, UriKind.Absolute, out var parsed) && string.IsNullOrEmpty(parsed.Fragment)),
+        "Household redirect URIs must be absolute and cannot contain fragments.")
+    .Validate(settings => settings.AccessTokenMinutes is > 0 and <= 60, "Household access-token lifetime is invalid.")
+    .Validate(settings => settings.RefreshTokenDays is > 0 and <= 90, "Household refresh-token lifetime is invalid.")
+    .Validate(settings => settings.AuthorizationCodeMinutes is > 0 and <= 10, "Household authorization-code lifetime is invalid.")
+    .ValidateOnStart();
 
 // JWT authentication
 var jwtSettings = builder.Configuration.GetSection(JwtSettings.SectionName).Get<JwtSettings>()!;
@@ -86,13 +124,78 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidIssuer = jwtSettings.Issuer,
             ValidAudience = jwtSettings.Audience,
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.SecretKey)),
-            ClockSkew = TimeSpan.Zero
-        };
-    });
+         ClockSkew = TimeSpan.Zero
+         };
+     })
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, HouseholdIntegrationAuthenticationHandler>(
+        HouseholdIntegrationDefaults.AuthenticationScheme, _ => { });
 
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("AdminPolicy", policy => policy.RequireRole("Admin"));
+    options.AddPolicy("NormalUserOnly", policy =>
+    {
+        policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme);
+        policy.RequireAuthenticatedUser();
+    });
+    options.AddPolicy("HouseholdIntegrationOnly", policy =>
+    {
+        policy.AddAuthenticationSchemes(HouseholdIntegrationDefaults.AuthenticationScheme);
+        policy.RequireAuthenticatedUser();
+    });
+    options.AddPolicy("HouseholdProfileReadPolicy", policy =>
+    {
+        policy.AddAuthenticationSchemes(HouseholdIntegrationDefaults.AuthenticationScheme);
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new HouseholdScopeRequirement("profile.read"));
+    });
+    options.AddPolicy("PokemonReadPolicy", policy =>
+    {
+        policy.AddAuthenticationSchemes(
+            JwtBearerDefaults.AuthenticationScheme,
+            HouseholdIntegrationDefaults.AuthenticationScheme);
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new HouseholdScopeRequirement("pokemon.read"));
+    });
+    options.AddPolicy("PokemonFavoriteWritePolicy", policy =>
+    {
+        policy.AddAuthenticationSchemes(
+            JwtBearerDefaults.AuthenticationScheme,
+            HouseholdIntegrationDefaults.AuthenticationScheme);
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new HouseholdScopeRequirement("pokemon.favorite.write"));
+    });
+    options.AddPolicy("PokemonNotesWritePolicy", policy =>
+    {
+        policy.AddAuthenticationSchemes(
+            JwtBearerDefaults.AuthenticationScheme,
+            HouseholdIntegrationDefaults.AuthenticationScheme);
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new HouseholdScopeRequirement("pokemon.notes.write"));
+    });
+});
+
+builder.Services.AddSingleton<Microsoft.AspNetCore.Authorization.IAuthorizationHandler, HouseholdScopeAuthorizationHandler>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<IHouseholdIntegrationService, HouseholdIntegrationService>();
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddFixedWindowLimiter("household-authorize", limiter =>
+    {
+        limiter.PermitLimit = 10;
+        limiter.Window = TimeSpan.FromMinutes(1);
+        limiter.QueueLimit = 0;
+        limiter.AutoReplenishment = true;
+    });
+    options.AddFixedWindowLimiter("household-token", limiter =>
+    {
+        limiter.PermitLimit = 30;
+        limiter.Window = TimeSpan.FromMinutes(1);
+        limiter.QueueLimit = 0;
+        limiter.AutoReplenishment = true;
+    });
 });
 
 // Auth service
@@ -188,11 +291,13 @@ app.UseMiddleware<ErrorHandlingMiddleware>();
 
 app.UseCors("AllowLocalhost");
 
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapHealthChecks();
 app.MapAuthEndpoints();
+app.MapHouseholdIntegrationEndpoints();
 app.MapSpriteEndpoints();
 app.MapImportEndpoints();
 app.MapPokemonEndpoints();
@@ -219,7 +324,8 @@ using (var scope = app.Services.CreateScope())
     catch (Exception ex) when (
         ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase) ||
         ex.Message.Contains("duplicate column", StringComparison.OrdinalIgnoreCase) ||
-        ex.Message.Contains("duplicate table", StringComparison.OrdinalIgnoreCase))
+        ex.Message.Contains("duplicate table", StringComparison.OrdinalIgnoreCase) ||
+        ex.Message.Contains("no such table", StringComparison.OrdinalIgnoreCase))
     {
         // Pre-existing database without migration history (like Games Database pattern).
         // Tables exist but EF can't apply migrations. Repair schema manually.
@@ -401,6 +507,10 @@ using (var scope = app.Services.CreateScope())
             cmd.CommandText = $@"INSERT OR IGNORE INTO ""__EFMigrationsHistory"" (""MigrationId"", ""ProductVersion"") VALUES ('{mig}', '9.0.8')";
             await cmd.ExecuteNonQueryAsync();
         }
+
+        // Apply migrations introduced after the repaired baseline during this same
+        // startup, so integrations do not observe a partially repaired schema.
+        await db.Database.MigrateAsync();
 
         Console.WriteLine("✅ Schema repaired successfully.");
     }

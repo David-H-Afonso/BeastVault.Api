@@ -210,6 +210,57 @@ public class PokemonService : IPokemonService
         return new PokemonListResponseDto(resultItems, total, stats);
     }
 
+    public async Task<PokemonSummaryDto> GetPokemonSummaryAsync(int userId)
+    {
+        var ownedPokemon = _db.Pokemon.AsNoTracking().Where(p => p.UserId == userId);
+
+        var counts = new PokemonSummaryCountsDto(
+            Total: await ownedPokemon.CountAsync(),
+            Favorites: await ownedPokemon.CountAsync(p => p.Favorite),
+            Shiny: await ownedPokemon.CountAsync(p => p.IsShiny),
+            Eggs: await ownedPokemon.CountAsync(p => p.IsEgg));
+
+        var recentImportRows = await ownedPokemon
+            .Join(
+                _db.Files.AsNoTracking().Where(f => f.UserId == userId),
+                pokemon => pokemon.FileId,
+                file => file.Id,
+                (pokemon, file) => new
+                {
+                    pokemon.Id,
+                    pokemon.SpeciesId,
+                    pokemon.Nickname,
+                    file.ImportedAt,
+                    FileName = file.OriginalFileName ?? file.FileName
+                })
+            .OrderByDescending(import => import.ImportedAt)
+            .ThenByDescending(import => import.Id)
+            .Take(10)
+            .ToListAsync();
+
+        var recentImports = recentImportRows
+            .Select(import => new PokemonRecentImportDto(
+                import.Id,
+                import.SpeciesId,
+                PkHexStringService.GetSpeciesName(import.SpeciesId),
+                import.Nickname,
+                import.ImportedAt,
+                import.FileName))
+            .ToList();
+
+        var tags = await _db.PokemonTags
+            .AsNoTracking()
+            .Where(pt => pt.Pokemon.UserId == userId &&
+                (pt.Tag.UserId == null || pt.Tag.UserId == userId))
+            .GroupBy(pt => new { pt.TagId, pt.Tag.Name })
+            .Select(group => new PokemonSummaryTagDto(group.Key.TagId, group.Key.Name, group.Count()))
+            .OrderByDescending(tag => tag.PokemonCount)
+            .ThenBy(tag => tag.Name)
+            .ToListAsync();
+
+        return new PokemonSummaryDto(counts, recentImports, tags);
+    }
+
     public async Task<TagFacetCountsDto> GetTagFacetCountsAsync(int userId, AdvancedPokemonQuery q)
     {
         // Strip tag include/exclude filters and pagination so the counts reflect the
@@ -422,6 +473,22 @@ public class PokemonService : IPokemonService
         await _db.SaveChangesAsync();
 
         return true;
+    }
+
+    public async Task<bool> UpdateFavoriteAsync(int userId, int pokemonId, bool favorite)
+    {
+        var updated = await _db.Pokemon
+            .Where(pokemon => pokemon.Id == pokemonId && pokemon.UserId == userId)
+            .ExecuteUpdateAsync(update => update.SetProperty(pokemon => pokemon.Favorite, favorite));
+        return updated == 1;
+    }
+
+    public async Task<bool> UpdateNotesAsync(int userId, int pokemonId, string? notes)
+    {
+        var updated = await _db.Pokemon
+            .Where(pokemon => pokemon.Id == pokemonId && pokemon.UserId == userId)
+            .ExecuteUpdateAsync(update => update.SetProperty(pokemon => pokemon.Notes, notes));
+        return updated == 1;
     }
 
     public async Task<object?> ComparePokemonAsync(int userId, int id1, int id2)

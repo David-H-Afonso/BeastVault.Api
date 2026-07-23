@@ -19,5 +19,6 @@ public class User
     public ICollection<PokemonEntity> Pokemon { get; set; } = [];
     public ICollection<TagEntity> Tags { get; set; } = [];
     public ICollection<PokemonBoxEntity> PokemonBoxes { get; set; } = [];
+    public ICollection<HouseholdConnection> HouseholdConnections { get; set; } = [];
     public UserPreference? Preferences { get; set; }
 }

@@ -104,14 +104,45 @@ namespace BeastVault.Api.Endpoints
                 if (userId == null) return Results.Unauthorized();
 
                 var result = await pokemonService.GetPokemonListAsync(userId.Value, q);
-                return Results.Ok(result);
+                if (!ctx.IsHouseholdIntegration()) return Results.Ok(result);
+
+                var integrationResult = new HouseholdPokemonListResponseDto(
+                    result.Items.Select(item => new HouseholdPokemonListItemDto(
+                        item.Id,
+                        item.SpeciesId,
+                        item.SpeciesName,
+                        item.Nickname,
+                        item.Level,
+                        item.IsShiny,
+                        item.Favorite,
+                        item.IsEgg,
+                        item.Type1,
+                        item.Type2)).ToList(),
+                    result.Total);
+                return Results.Ok(integrationResult);
             })
             .WithName("GetPokemonList")
             .WithSummary("Get Pokemon with advanced filtering, sorting and pagination")
             .WithDescription("Main endpoint with comprehensive filtering by types, generations, stats, and flexible sorting options.")
             .WithTags("Pokemon")
             .Produces<object>(200)
-            .RequireAuthorization();
+            .RequireAuthorization("PokemonReadPolicy");
+
+            app.MapGet("/pokemon/summary", async (IPokemonService pokemonService, HttpContext ctx) =>
+            {
+                var userId = ctx.GetUserId();
+                if (userId == null) return Results.Unauthorized();
+
+                var summary = await pokemonService.GetPokemonSummaryAsync(userId.Value);
+                return ctx.IsHouseholdIntegration()
+                    ? Results.Ok(new HouseholdPokemonSummaryDto(summary.Counts))
+                    : Results.Ok(summary);
+            })
+            .WithName("GetPokemonSummary")
+            .WithSummary("Get ownership-scoped Pokémon counts, recent imports and tags")
+            .WithTags("Pokemon")
+            .Produces<PokemonSummaryDto>(200)
+            .RequireAuthorization("PokemonReadPolicy");
 
             // Per-tag match counts for the current search/filter context (faceted counts).
             // Tag include/exclude filters are ignored so each tag shows how many of the
@@ -258,7 +289,27 @@ namespace BeastVault.Api.Endpoints
                 if (userId == null) return Results.Unauthorized();
 
                 var detail = await pokemonService.GetPokemonByIdAsync(userId.Value, id);
-                return detail is not null ? Results.Ok(detail) : Results.NotFound();
+                if (detail is null) return Results.NotFound();
+                if (!ctx.IsHouseholdIntegration()) return Results.Ok(detail);
+
+                return Results.Ok(new HouseholdPokemonDetailDto(
+                    detail.Id,
+                    detail.SpeciesId,
+                    detail.SpeciesName,
+                    detail.Form,
+                    detail.FormName,
+                    detail.Nickname,
+                    detail.Level,
+                    detail.IsShiny,
+                    detail.IsEgg,
+                    detail.Favorite,
+                    detail.Notes,
+                    detail.NatureName,
+                    detail.AbilityName,
+                    detail.BallName,
+                    detail.GenderName,
+                    detail.OriginGameName,
+                    detail.MetLevel));
             })
             .WithName("GetPokemonById")
             .WithSummary("Get complete details of a Pokémon")
@@ -266,7 +317,7 @@ namespace BeastVault.Api.Endpoints
             .WithTags("Pokemon")
             .Produces<PokemonDetailDto>(200)
             .Produces(404)
-            .RequireAuthorization();
+            .RequireAuthorization("PokemonReadPolicy");
 
             app.MapGet("/pokemon/{id:int}/showdown", async (int id, IPokemonService pokemonService, HttpContext ctx) =>
             {
@@ -300,6 +351,47 @@ namespace BeastVault.Api.Endpoints
             .Produces(204)
             .Produces(404)
             .RequireAuthorization();
+
+            app.MapPatch("/pokemon/{id:int}/favorite", async (
+                int id,
+                HouseholdFavoriteRequest dto,
+                IPokemonService pokemonService,
+                HttpContext ctx) =>
+            {
+                var userId = ctx.GetUserId();
+                if (userId == null) return Results.Unauthorized();
+
+                var updated = await pokemonService.UpdateFavoriteAsync(userId.Value, id, dto.Favorite);
+                return updated ? Results.NoContent() : Results.NotFound();
+            })
+            .WithName("UpdatePokemonFavorite")
+            .WithSummary("Update only a Pokémon favorite flag")
+            .WithTags("Pokemon")
+            .Produces(204)
+            .Produces(404)
+            .RequireAuthorization("PokemonFavoriteWritePolicy");
+
+            app.MapPatch("/pokemon/{id:int}/notes", async (
+                int id,
+                HouseholdNotesRequest dto,
+                IPokemonService pokemonService,
+                HttpContext ctx) =>
+            {
+                var userId = ctx.GetUserId();
+                if (userId == null) return Results.Unauthorized();
+                if (dto.Notes is { Length: > 10_000 })
+                    return Results.BadRequest(new { message = "Notes cannot exceed 10000 characters." });
+
+                var updated = await pokemonService.UpdateNotesAsync(userId.Value, id, dto.Notes);
+                return updated ? Results.NoContent() : Results.NotFound();
+            })
+            .WithName("UpdatePokemonNotes")
+            .WithSummary("Update or clear only a Pokémon note")
+            .WithTags("Pokemon")
+            .Produces(204)
+            .Produces(400)
+            .Produces(404)
+            .RequireAuthorization("PokemonNotesWritePolicy");
 
             // Compare two Pokemon to see differences (useful for debugging trades)
             app.MapGet("/pokemon/compare/{id1:int}/{id2:int}", async (int id1, int id2, IPokemonService pokemonService, HttpContext ctx) =>

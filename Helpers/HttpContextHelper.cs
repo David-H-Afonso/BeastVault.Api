@@ -12,4 +12,8 @@ public static class HttpContextHelper
 
     public static bool IsAdmin(this HttpContext context) =>
         context.User.IsInRole("Admin");
+
+    public static bool IsHouseholdIntegration(this HttpContext context) =>
+        context.User.Identities.Any(identity =>
+            string.Equals(identity.AuthenticationType, "HouseholdIntegration", StringComparison.Ordinal));
 }
