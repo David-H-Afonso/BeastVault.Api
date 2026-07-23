@@ -101,7 +101,7 @@ namespace BeastVault.Api.Endpoints
                         Id = t.Id,
                         Name = t.Name,
                         ImagePath = t.ImagePath,
-                        PokemonCount = db.PokemonTags.Count(pt => pt.TagId == t.Id),
+                        PokemonCount = db.PokemonTags.Count(pt => pt.TagId == t.Id && pt.Pokemon.UserId == userId),
                         Category = t.Category.ToString(),
                         ColorHex = t.ColorHex,
                         SortOrder = t.SortOrder,
@@ -109,8 +109,16 @@ namespace BeastVault.Api.Endpoints
                     })
                     .ToListAsync();
 
-                return Results.Ok(tags);
-            }).WithTags("Tags").RequireAuthorization();
+                if (!ctx.IsHouseholdIntegration()) return Results.Ok(tags);
+
+                return Results.Ok(tags.Select(tag => new HouseholdTagFilterDto(
+                    tag.Id,
+                    tag.Name,
+                    tag.ImagePath,
+                    tag.PokemonCount,
+                    tag.Category,
+                    tag.ColorHex)));
+            }).WithTags("Tags").RequireAuthorization("PokemonReadPolicy");
 
             // Get a specific tag by ID
             app.MapGet("/tags/{id:int}", async (int id, AppDbContext db, HttpContext ctx) =>
@@ -122,7 +130,7 @@ namespace BeastVault.Api.Endpoints
                 if (tag == null)
                     return Results.NotFound();
 
-                var pokemonCount = await db.PokemonTags.CountAsync(pt => pt.TagId == id);
+                var pokemonCount = await db.PokemonTags.CountAsync(pt => pt.TagId == id && pt.Pokemon.UserId == userId);
 
                 return Results.Ok(new TagDto
                 {

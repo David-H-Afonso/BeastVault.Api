@@ -62,7 +62,7 @@ public class PokemonService : IPokemonService
         // Batch-load tags
         var pokemonIds = items.Select(i => i.Id).ToList();
         var pokemonTags = await _db.PokemonTags
-            .Where(pt => pokemonIds.Contains(pt.PokemonId))
+            .Where(pt => pokemonIds.Contains(pt.PokemonId) && (pt.Tag.UserId == null || pt.Tag.UserId == userId))
             .Include(pt => pt.Tag)
             .GroupBy(pt => pt.PokemonId)
             .ToDictionaryAsync(

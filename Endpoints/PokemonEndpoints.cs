@@ -117,7 +117,13 @@ namespace BeastVault.Api.Endpoints
                         item.Favorite,
                         item.IsEgg,
                         item.Type1,
-                        item.Type2)).ToList(),
+                        item.Type2,
+                        BuildHouseholdSpriteUrl(item),
+                        item.Tags.Select(tag => new HouseholdPokemonTagDto(
+                            tag.Id,
+                            tag.Name,
+                            tag.ImagePath,
+                            tag.ColorHex)).ToList())).ToList(),
                     result.Total);
                 return Results.Ok(integrationResult);
             })
@@ -435,6 +441,15 @@ namespace BeastVault.Api.Endpoints
             .RequireAuthorization("AdminPolicy");
 
             return app;
+        }
+
+        private static string BuildHouseholdSpriteUrl(PokemonListItemDto item)
+        {
+            var sprite = item.IsShiny ? item.Sprites?.HomeShiny : item.Sprites?.Home;
+            if (!string.IsNullOrWhiteSpace(sprite)) return sprite;
+
+            var fallback = PokemonSpritesDto.ForPokemonId(item.SpeciesId);
+            return item.IsShiny ? fallback.HomeShiny : fallback.Home;
         }
     }
 }

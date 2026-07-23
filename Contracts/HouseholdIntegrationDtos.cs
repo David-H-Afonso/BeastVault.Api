@@ -43,6 +43,20 @@ public sealed record HouseholdNotesRequest(string? Notes);
 
 public sealed record HouseholdPokemonSummaryDto(PokemonSummaryCountsDto Counts);
 
+public sealed record HouseholdPokemonTagDto(
+    int Id,
+    string Name,
+    string? ImagePath,
+    string? ColorHex);
+
+public sealed record HouseholdTagFilterDto(
+    int Id,
+    string Name,
+    string? ImagePath,
+    int PokemonCount,
+    string Category,
+    string? ColorHex);
+
 public sealed record HouseholdPokemonListItemDto(
     int Id,
     int SpeciesId,
@@ -53,7 +67,9 @@ public sealed record HouseholdPokemonListItemDto(
     bool Favorite,
     bool IsEgg,
     string? Type1,
-    string? Type2);
+    string? Type2,
+    string SpriteUrl,
+    IReadOnlyList<HouseholdPokemonTagDto> Tags);
 
 public sealed record HouseholdPokemonListResponseDto(
     IReadOnlyList<HouseholdPokemonListItemDto> Items,

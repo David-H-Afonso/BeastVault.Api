@@ -98,6 +98,7 @@ public sealed class HouseholdIntegrationTests : IClassFixture<HouseholdApiFactor
         var userA = await RegisterAsync(Unique("user-a"));
         var userB = await RegisterAsync(Unique("user-b"));
         var (pokemonA, pokemonB) = await SeedPokemonAsync(userA.UserId, userB.UserId);
+        var (ownTagId, systemTagId) = await SeedTagsAsync(userA.UserId, userB.UserId, pokemonA, pokemonB);
         var tokens = await ConnectAsync(userA.Token);
 
         var listResponse = await SendWithBearerAsync(HttpMethod.Get, "/pokemon?skip=0&take=50", tokens.AccessToken);
@@ -107,7 +108,19 @@ public sealed class HouseholdIntegrationTests : IClassFixture<HouseholdApiFactor
         Assert.Single(items.EnumerateArray());
         Assert.Equal(pokemonA, items[0].GetProperty("id").GetInt32());
         Assert.False(items[0].TryGetProperty("ballId", out _));
-        Assert.False(items[0].TryGetProperty("tags", out _));
+        Assert.StartsWith("/sprites/pokemon/", items[0].GetProperty("spriteUrl").GetString());
+        var visibleTags = items[0].GetProperty("tags").EnumerateArray().ToList();
+        Assert.Equal(2, visibleTags.Count);
+        Assert.Contains(visibleTags, tag => tag.GetProperty("id").GetInt32() == ownTagId);
+        Assert.Contains(visibleTags, tag => tag.GetProperty("id").GetInt32() == systemTagId);
+
+        var tagsResponse = await SendWithBearerAsync(HttpMethod.Get, "/tags", tokens.AccessToken);
+        tagsResponse.EnsureSuccessStatusCode();
+        using var tagsJson = JsonDocument.Parse(await tagsResponse.Content.ReadAsStringAsync());
+        var filterTags = tagsJson.RootElement.EnumerateArray().ToList();
+        Assert.Equal(2, filterTags.Count);
+        Assert.Equal(1, filterTags.Single(tag => tag.GetProperty("id").GetInt32() == systemTagId)
+            .GetProperty("pokemonCount").GetInt32());
 
         var ownDetail = await SendWithBearerAsync(HttpMethod.Get, $"/pokemon/{pokemonA}", tokens.AccessToken);
         ownDetail.EnsureSuccessStatusCode();
@@ -271,6 +284,28 @@ public sealed class HouseholdIntegrationTests : IClassFixture<HouseholdApiFactor
         db.Pokemon.AddRange(pokemonA, pokemonB);
         await db.SaveChangesAsync();
         return (pokemonA.Id, pokemonB.Id);
+    }
+
+    private async Task<(int OwnTagId, int SystemTagId)> SeedTagsAsync(
+        int userA,
+        int userB,
+        int pokemonA,
+        int pokemonB)
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var ownTag = new TagEntity { UserId = userA, Name = Unique("own-tag"), ColorHex = "#ef4444" };
+        var systemTag = new TagEntity { UserId = null, Name = Unique("system-tag"), ColorHex = "#3b82f6" };
+        var foreignTag = new TagEntity { UserId = userB, Name = Unique("foreign-tag"), ColorHex = "#22c55e" };
+        db.Tags.AddRange(ownTag, systemTag, foreignTag);
+        await db.SaveChangesAsync();
+        db.PokemonTags.AddRange(
+            new PokemonTagEntity { PokemonId = pokemonA, TagId = ownTag.Id },
+            new PokemonTagEntity { PokemonId = pokemonA, TagId = systemTag.Id },
+            new PokemonTagEntity { PokemonId = pokemonA, TagId = foreignTag.Id },
+            new PokemonTagEntity { PokemonId = pokemonB, TagId = systemTag.Id });
+        await db.SaveChangesAsync();
+        return (ownTag.Id, systemTag.Id);
     }
 
     private static FileEntity NewFile(int userId, string sha) => new()
