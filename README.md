@@ -182,8 +182,10 @@ Only their SHA-256 hashes are persisted. Access tokens expire after 15 minutes a
 refresh tokens after 30 days by default. Refresh reuse revokes that connection's
 token family. `/revoke` is idempotent and `/me` reports the connected account.
 
-Allowed scopes are `profile.read`, `pokemon.read`, `pokemon.favorite.write`, and
-`pokemon.notes.write`. Integration reads return narrow summary/list/detail fields.
+Allowed scopes are `profile.read`, `pokemon.read`, `pokemon.download`,
+`pokemon.favorite.write`, and `pokemon.notes.write`. Integration reads return narrow
+summary/list/detail fields. `GET /api/integrations/household/v1/pokemon/{id}/download`
+requires `pokemon.download` and returns only the connected user's original file.
 Writes are split between `PATCH /pokemon/{id}/favorite` and
 `PATCH /pokemon/{id}/notes`; the generic Pokémon PATCH remains normal-JWT-only.
 

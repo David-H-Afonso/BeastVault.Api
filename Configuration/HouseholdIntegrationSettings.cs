@@ -14,6 +14,7 @@ public sealed class HouseholdIntegrationSettings
     [
         "profile.read",
         "pokemon.read",
+        "pokemon.download",
         "pokemon.favorite.write",
         "pokemon.notes.write"
     ];

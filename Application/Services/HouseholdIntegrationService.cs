@@ -5,6 +5,7 @@ using BeastVault.Api.Configuration;
 using BeastVault.Api.Contracts;
 using BeastVault.Api.Domain.Entities;
 using BeastVault.Api.Infrastructure;
+using BeastVault.Api.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -17,6 +18,7 @@ public sealed class HouseholdIntegrationService : IHouseholdIntegrationService
     private const string AuthorizationCodePrefix = "bvhi_ac_";
 
     private readonly AppDbContext _db;
+    private readonly FileStorageService _storage;
     private readonly HouseholdIntegrationSettings _settings;
     private readonly TimeProvider _timeProvider;
     private readonly HashSet<string> _redirectUris;
@@ -24,10 +26,12 @@ public sealed class HouseholdIntegrationService : IHouseholdIntegrationService
 
     public HouseholdIntegrationService(
         AppDbContext db,
+        FileStorageService storage,
         IOptions<HouseholdIntegrationSettings> settings,
         TimeProvider timeProvider)
     {
         _db = db;
+        _storage = storage;
         _settings = settings.Value;
         _timeProvider = timeProvider;
         _redirectUris = new HashSet<string>(_settings.RedirectUris, StringComparer.Ordinal);
@@ -190,6 +194,38 @@ public sealed class HouseholdIntegrationService : IHouseholdIntegrationService
             connection.Id,
             BuildAccount(connection.User),
             SplitScopes(connection.GrantedScopes));
+    }
+
+    public async Task<HouseholdPokemonDownload?> GetPokemonDownloadAsync(
+        int userId,
+        int pokemonId,
+        CancellationToken cancellationToken = default)
+    {
+        var file = await _db.Pokemon
+            .AsNoTracking()
+            .Where(pokemon =>
+                pokemon.Id == pokemonId &&
+                pokemon.UserId == userId &&
+                pokemon.File.UserId == userId)
+            .Select(pokemon => new
+            {
+                pokemon.File.StoredPath,
+                pokemon.File.OriginalFileName,
+                pokemon.File.FileName,
+                pokemon.File.Format
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (file is null || !_storage.TryReadUserFile(userId, file.StoredPath, out var content))
+        {
+            return null;
+        }
+
+        var fileName = SanitizeDownloadFileName(
+            file.OriginalFileName ?? file.FileName,
+            file.Format,
+            pokemonId);
+        return new HouseholdPokemonDownload(content, fileName);
     }
 
     private async Task<HouseholdServiceResult<HouseholdTokenResponse>> ExchangeAuthorizationCodeAsync(
@@ -465,6 +501,37 @@ public sealed class HouseholdIntegrationService : IHouseholdIntegrationService
 
     private static string[] SplitScopes(string scopes) =>
         scopes.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    private static string SanitizeDownloadFileName(string? fileName, string format, int pokemonId)
+    {
+        var normalized = (fileName ?? string.Empty).Replace('\\', '/');
+        var leafName = normalized[(normalized.LastIndexOf('/') + 1)..];
+        var safeName = new string(leafName
+            .Select(character =>
+                char.IsControl(character) || character is '<' or '>' or ':' or '"' or '/' or '\\' or '|' or '?' or '*'
+                    ? '_'
+                    : character)
+            .ToArray())
+            .Trim()
+            .Trim('.');
+
+        if (safeName.Length > 180)
+        {
+            safeName = safeName[..180].TrimEnd(' ', '.');
+        }
+
+        if (!string.IsNullOrWhiteSpace(safeName))
+        {
+            return safeName;
+        }
+
+        var safeFormat = new string(format
+            .Where(char.IsAsciiLetterOrDigit)
+            .Take(10)
+            .ToArray())
+            .ToLowerInvariant();
+        return $"pokemon-{pokemonId}.{(safeFormat.Length == 0 ? "pkm" : safeFormat)}";
+    }
 
     private static HouseholdServiceResult<HouseholdTokenResponse> InvalidGrant() =>
         HouseholdServiceResult<HouseholdTokenResponse>.Fail(

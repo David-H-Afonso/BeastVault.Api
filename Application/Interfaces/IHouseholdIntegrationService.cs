@@ -20,7 +20,14 @@ public interface IHouseholdIntegrationService
     Task<HouseholdMeResponse?> GetMeAsync(
         Guid connectionId,
         CancellationToken cancellationToken = default);
+
+    Task<HouseholdPokemonDownload?> GetPokemonDownloadAsync(
+        int userId,
+        int pokemonId,
+        CancellationToken cancellationToken = default);
 }
+
+public sealed record HouseholdPokemonDownload(byte[] Content, string FileName);
 
 public sealed record HouseholdServiceResult<T>(T? Value, string? Error, string? ErrorDescription)
 {

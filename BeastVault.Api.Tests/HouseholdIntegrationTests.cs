@@ -188,6 +188,76 @@ public sealed class HouseholdIntegrationTests : IClassFixture<HouseholdApiFactor
                 JsonContent.Create(new { favorite = true }))).StatusCode);
     }
 
+    [Fact]
+    public async Task PokemonDownload_RequiresAuthenticationAndExplicitScope()
+    {
+        var userA = await RegisterAsync(Unique("download-scope-a"));
+        var userB = await RegisterAsync(Unique("download-scope-b"));
+        var ((pokemonA, _), _) = await SeedPokemonFilesAsync(userA.UserId, userB.UserId);
+        var endpoint = $"/api/integrations/household/v1/pokemon/{pokemonA}/download";
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await _client.GetAsync(endpoint)).StatusCode);
+
+        var tokens = await ConnectAsync(userA.Token, ["pokemon.read"]);
+        Assert.Equal(
+            HttpStatusCode.Forbidden,
+            (await SendWithBearerAsync(HttpMethod.Get, endpoint, tokens.AccessToken)).StatusCode);
+    }
+
+    [Fact]
+    public async Task PokemonDownload_IsOwnershipScoped_AndReturnsSafeAttachment()
+    {
+        var userA = await RegisterAsync(Unique("download-owner-a"));
+        var userB = await RegisterAsync(Unique("download-owner-b"));
+        var ((pokemonA, pokemonB), (bytesA, _)) = await SeedPokemonFilesAsync(userA.UserId, userB.UserId);
+        var tokens = await ConnectAsync(userA.Token, ["pokemon.download"]);
+
+        var ownResponse = await SendWithBearerAsync(
+            HttpMethod.Get,
+            $"/api/integrations/household/v1/pokemon/{pokemonA}/download",
+            tokens.AccessToken);
+
+        Assert.Equal(HttpStatusCode.OK, ownResponse.StatusCode);
+        Assert.Equal("application/octet-stream", ownResponse.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(bytesA, await ownResponse.Content.ReadAsByteArrayAsync());
+        Assert.Equal("attachment", ownResponse.Content.Headers.ContentDisposition?.DispositionType);
+        Assert.Equal("unsafe__name.pk9", ownResponse.Content.Headers.ContentDisposition?.FileName);
+        Assert.Equal("unsafe__name.pk9", ownResponse.Content.Headers.ContentDisposition?.FileNameStar);
+
+        var foreignResponse = await SendWithBearerAsync(
+            HttpMethod.Get,
+            $"/api/integrations/household/v1/pokemon/{pokemonB}/download",
+            tokens.AccessToken);
+        var missingResponse = await SendWithBearerAsync(
+            HttpMethod.Get,
+            "/api/integrations/household/v1/pokemon/2147483647/download",
+            tokens.AccessToken);
+        Assert.Equal(HttpStatusCode.NotFound, foreignResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, missingResponse.StatusCode);
+        Assert.Equal(
+            await missingResponse.Content.ReadAsByteArrayAsync(),
+            await foreignResponse.Content.ReadAsByteArrayAsync());
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var ownedFileId = await db.Pokemon
+                .Where(pokemon => pokemon.Id == pokemonA)
+                .Select(pokemon => pokemon.FileId)
+                .SingleAsync();
+            var ownedFile = await db.Files.SingleAsync(file => file.Id == ownedFileId);
+            ownedFile.StoredPath = typeof(HouseholdIntegrationTests).Assembly.Location;
+            await db.SaveChangesAsync();
+        }
+
+        Assert.Equal(
+            HttpStatusCode.NotFound,
+            (await SendWithBearerAsync(
+                HttpMethod.Get,
+                $"/api/integrations/household/v1/pokemon/{pokemonA}/download",
+                tokens.AccessToken)).StatusCode);
+    }
+
     private async Task<LoginResponse> RegisterAsync(string username)
     {
         var response = await _client.PostAsJsonAsync("/auth/register", new { username, password = "Test-password-123!" });
@@ -233,7 +303,7 @@ public sealed class HouseholdIntegrationTests : IClassFixture<HouseholdApiFactor
                 "state-value",
                 CreateChallenge(verifier),
                 "S256",
-                scopes ?? ["profile.read", "pokemon.read", "pokemon.favorite.write", "pokemon.notes.write"]))
+                scopes ?? ["profile.read", "pokemon.read", "pokemon.download", "pokemon.favorite.write", "pokemon.notes.write"]))
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", normalJwt);
         return await _client.SendAsync(request);
@@ -284,6 +354,35 @@ public sealed class HouseholdIntegrationTests : IClassFixture<HouseholdApiFactor
         db.Pokemon.AddRange(pokemonA, pokemonB);
         await db.SaveChangesAsync();
         return (pokemonA.Id, pokemonB.Id);
+    }
+
+    private async Task<((int PokemonA, int PokemonB) Pokemon, (byte[] BytesA, byte[] BytesB) Bytes)> SeedPokemonFilesAsync(
+        int userA,
+        int userB)
+    {
+        var bytesA = new byte[] { 0x50, 0x4b, 0x39, 0x00, 0x41 };
+        var bytesB = new byte[] { 0x50, 0x4b, 0x39, 0x00, 0x42 };
+        var pathA = await _factory.WritePokemonFileAsync(userA, "owned-a.pk9", bytesA);
+        var pathB = await _factory.WritePokemonFileAsync(userB, "owned-b.pk9", bytesB);
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var fileA = NewFile(userA, Unique("download-sha-a"));
+        fileA.OriginalFileName = "../unsafe\r\nname.pk9";
+        fileA.StoredPath = pathA;
+        fileA.Size = bytesA.Length;
+        var fileB = NewFile(userB, Unique("download-sha-b"));
+        fileB.StoredPath = pathB;
+        fileB.Size = bytesB.Length;
+        db.Files.AddRange(fileA, fileB);
+        await db.SaveChangesAsync();
+
+        var pokemonA = new PokemonEntity { UserId = userA, FileId = fileA.Id, SpeciesId = 25 };
+        var pokemonB = new PokemonEntity { UserId = userB, FileId = fileB.Id, SpeciesId = 1 };
+        db.Pokemon.AddRange(pokemonA, pokemonB);
+        await db.SaveChangesAsync();
+
+        return ((pokemonA.Id, pokemonB.Id), (bytesA, bytesB));
     }
 
     private async Task<(int OwnTagId, int SystemTagId)> SeedTagsAsync(
@@ -351,6 +450,18 @@ public sealed class HouseholdApiFactory : WebApplicationFactory<Program>
     private readonly string _databasePath = Path.Combine(
         AppContext.BaseDirectory,
         $"beast-vault-household-tests-{Guid.NewGuid():N}.db");
+    private readonly string _pokemonPath = Path.Combine(
+        AppContext.BaseDirectory,
+        $"beast-vault-household-files-{Guid.NewGuid():N}");
+
+    public async Task<string> WritePokemonFileAsync(int userId, string fileName, byte[] content)
+    {
+        var userDirectory = Path.Combine(_pokemonPath, userId.ToString());
+        Directory.CreateDirectory(userDirectory);
+        var filePath = Path.Combine(userDirectory, fileName);
+        await File.WriteAllBytesAsync(filePath, content);
+        return filePath;
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -361,6 +472,7 @@ public sealed class HouseholdApiFactory : WebApplicationFactory<Program>
             {
                 ["ConnectionStrings:Default"] = $"Data Source={_databasePath};Pooling=False",
                 ["BeastVault:SkipStartupScan"] = "true",
+                ["BeastVault:Storage:PokemonFilesPath"] = _pokemonPath,
                 ["HouseholdIntegration:ClientId"] = "household",
                 ["HouseholdIntegration:RedirectUris:0"] = RedirectForTests,
                 ["HouseholdIntegration:AccessTokenMinutes"] = "15",
@@ -422,6 +534,12 @@ public sealed class HouseholdApiFactory : WebApplicationFactory<Program>
         {
             try { File.Delete(_databasePath); }
             catch (IOException) { /* SQLite may release its pooled handle shortly after host disposal. */ }
+        }
+        if (disposing && Directory.Exists(_pokemonPath))
+        {
+            try { Directory.Delete(_pokemonPath, recursive: true); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
         }
     }
 }

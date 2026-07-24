@@ -199,6 +199,42 @@ namespace BeastVault.Api.Infrastructure.Services
 
         public byte[] Read(string path) => File.ReadAllBytes(path);
 
+        public bool TryReadUserFile(int userId, string storedPath, out byte[] content)
+        {
+            content = [];
+            if (userId <= 0 || string.IsNullOrWhiteSpace(storedPath)) return false;
+
+            try
+            {
+                var userRoot = Path.GetFullPath(GetUserBasePath(userId));
+                var candidatePath = Path.IsPathFullyQualified(storedPath)
+                    ? storedPath
+                    : Path.Combine(userRoot, storedPath);
+                var fullPath = Path.GetFullPath(candidatePath);
+                var relativePath = Path.GetRelativePath(userRoot, fullPath);
+
+                if (relativePath == "." ||
+                    Path.IsPathRooted(relativePath) ||
+                    relativePath == ".." ||
+                    relativePath.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal) ||
+                    relativePath.StartsWith($"..{Path.AltDirectorySeparatorChar}", StringComparison.Ordinal))
+                {
+                    return false;
+                }
+
+                content = File.ReadAllBytes(fullPath);
+                return true;
+            }
+            catch (Exception exception) when (exception is
+                ArgumentException or
+                IOException or
+                NotSupportedException or
+                UnauthorizedAccessException)
+            {
+                return false;
+            }
+        }
+
         /// <summary>
         /// Get the path where a user's backup file should be
         /// </summary>

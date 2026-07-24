@@ -149,6 +149,12 @@ builder.Services.AddAuthorization(options =>
         policy.RequireAuthenticatedUser();
         policy.AddRequirements(new HouseholdScopeRequirement("profile.read"));
     });
+    options.AddPolicy("HouseholdPokemonDownloadPolicy", policy =>
+    {
+        policy.AddAuthenticationSchemes(HouseholdIntegrationDefaults.AuthenticationScheme);
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new HouseholdScopeRequirement("pokemon.download"));
+    });
     options.AddPolicy("PokemonReadPolicy", policy =>
     {
         policy.AddAuthenticationSchemes(
