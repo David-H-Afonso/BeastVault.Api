@@ -69,6 +69,7 @@ public sealed record HouseholdPokemonListItemDto(
     string? Type1,
     string? Type2,
     string SpriteUrl,
+    DateTime ImportedAt,
     IReadOnlyList<HouseholdPokemonTagDto> Tags);
 
 public sealed record HouseholdPokemonListResponseDto(

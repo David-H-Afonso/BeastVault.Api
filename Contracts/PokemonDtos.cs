@@ -64,6 +64,7 @@ public record PokemonListItemDto
     public int CapturedGeneration { get; init; }
     public bool CanGigantamax { get; init; }
     public bool HasMegaStone { get; init; }
+    public DateTime ImportedAt { get; init; }
     public List<TagDto> Tags { get; init; } = new();
 
     // Enriched fields from Pokédex cache (no frontend PokeAPI calls needed)

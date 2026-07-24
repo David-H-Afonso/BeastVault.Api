@@ -28,7 +28,7 @@ public static class PokemonSortingService
             PokemonSortField.Gender => ApplySort(query, p => p.Gender, options.Direction),
             PokemonSortField.IsShiny => ApplySort(query, p => p.IsShiny ? 1 : 0, options.Direction), // Convert bool to int for proper sorting
             PokemonSortField.Form => ApplySort(query, p => p.Form, options.Direction),
-            PokemonSortField.CreatedAt => ApplySort(query, p => p.Id, options.Direction), // Use Id as proxy for creation time since no CreatedAt field
+            PokemonSortField.CreatedAt => ApplySort(query, p => p.File.ImportedAt, options.Direction),
             PokemonSortField.Favorite => ApplySort(query, p => p.Favorite ? 1 : 0, options.Direction), // Convert bool to int for proper sorting
             _ => query.OrderByDescending(p => p.Id) // Default fallback
         };

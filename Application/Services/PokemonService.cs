@@ -55,7 +55,8 @@ public class PokemonService : IPokemonService
                 OriginGeneration = PokemonGameInfoService.GetSpeciesOriginGeneration(pf.Pokemon.SpeciesId),
                 CapturedGeneration = PokemonGameInfoService.GetCapturedGeneration(pf.Pokemon.OriginGame, pf.File.Format),
                 CanGigantamax = pf.Pokemon.CanGigantamax,
-                HasMegaStone = PokemonFormService.CheckHasMegaStone(pf.Pokemon)
+                HasMegaStone = PokemonFormService.CheckHasMegaStone(pf.Pokemon),
+                pf.File.ImportedAt
             })
             .ToListAsync();
 
@@ -195,6 +196,7 @@ public class PokemonService : IPokemonService
                 CapturedGeneration = item.CapturedGeneration,
                 CanGigantamax = item.CanGigantamax,
                 HasMegaStone = item.HasMegaStone,
+                ImportedAt = item.ImportedAt,
                 Tags = pokemonTags.GetValueOrDefault(item.Id, new List<TagDto>()),
                 Type1 = type1,
                 Type2 = type2,

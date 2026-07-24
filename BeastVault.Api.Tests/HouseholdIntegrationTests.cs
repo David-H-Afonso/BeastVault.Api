@@ -108,6 +108,7 @@ public sealed class HouseholdIntegrationTests : IClassFixture<HouseholdApiFactor
         Assert.Single(items.EnumerateArray());
         Assert.Equal(pokemonA, items[0].GetProperty("id").GetInt32());
         Assert.False(items[0].TryGetProperty("ballId", out _));
+        Assert.True(items[0].TryGetProperty("importedAt", out _));
         Assert.StartsWith("/sprites/pokemon/", items[0].GetProperty("spriteUrl").GetString());
         var visibleTags = items[0].GetProperty("tags").EnumerateArray().ToList();
         Assert.Equal(2, visibleTags.Count);
@@ -247,15 +248,16 @@ public sealed class HouseholdIntegrationTests : IClassFixture<HouseholdApiFactor
                 .SingleAsync();
             var ownedFile = await db.Files.SingleAsync(file => file.Id == ownedFileId);
             ownedFile.StoredPath = typeof(HouseholdIntegrationTests).Assembly.Location;
+            ownedFile.RawBlob = new byte[] { 0x50, 0x4b, 0x39, 0x00, 0x43 };
             await db.SaveChangesAsync();
         }
 
-        Assert.Equal(
-            HttpStatusCode.NotFound,
-            (await SendWithBearerAsync(
-                HttpMethod.Get,
-                $"/api/integrations/household/v1/pokemon/{pokemonA}/download",
-                tokens.AccessToken)).StatusCode);
+        var fallbackResponse = await SendWithBearerAsync(
+            HttpMethod.Get,
+            $"/api/integrations/household/v1/pokemon/{pokemonA}/download",
+            tokens.AccessToken);
+        Assert.Equal(HttpStatusCode.OK, fallbackResponse.StatusCode);
+        Assert.Equal(new byte[] { 0x50, 0x4b, 0x39, 0x00, 0x43 }, await fallbackResponse.Content.ReadAsByteArrayAsync());
     }
 
     private async Task<LoginResponse> RegisterAsync(string username)

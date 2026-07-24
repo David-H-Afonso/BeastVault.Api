@@ -212,14 +212,27 @@ public sealed class HouseholdIntegrationService : IHouseholdIntegrationService
                 pokemon.File.StoredPath,
                 pokemon.File.OriginalFileName,
                 pokemon.File.FileName,
-                pokemon.File.Format
+                pokemon.File.Format,
+                pokemon.File.RawBlob
             })
             .FirstOrDefaultAsync(cancellationToken);
 
-        if (file is null || !_storage.TryReadUserFile(userId, file.StoredPath, out var content))
+        if (file is null)
         {
             return null;
         }
+
+        byte[]? content = null;
+        if (_storage.TryReadUserFile(userId, file.StoredPath, out var storedContent))
+        {
+            content = storedContent;
+        }
+        else if (file.RawBlob is { Length: > 0 })
+        {
+            content = file.RawBlob;
+        }
+
+        if (content is null) return null;
 
         var fileName = SanitizeDownloadFileName(
             file.OriginalFileName ?? file.FileName,

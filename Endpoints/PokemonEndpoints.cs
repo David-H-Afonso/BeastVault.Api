@@ -119,6 +119,7 @@ namespace BeastVault.Api.Endpoints
                         item.Type1,
                         item.Type2,
                         BuildHouseholdSpriteUrl(item),
+                        item.ImportedAt,
                         item.Tags.Select(tag => new HouseholdPokemonTagDto(
                             tag.Id,
                             tag.Name,
