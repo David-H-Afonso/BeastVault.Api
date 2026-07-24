@@ -237,6 +237,7 @@ public sealed class HouseholdIntegrationService : IHouseholdIntegrationService
         var fileName = SanitizeDownloadFileName(
             file.OriginalFileName ?? file.FileName,
             file.Format,
+            content,
             pokemonId);
         return new HouseholdPokemonDownload(content, fileName);
     }
@@ -515,7 +516,7 @@ public sealed class HouseholdIntegrationService : IHouseholdIntegrationService
     private static string[] SplitScopes(string scopes) =>
         scopes.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-    private static string SanitizeDownloadFileName(string? fileName, string format, int pokemonId)
+    private static string SanitizeDownloadFileName(string? fileName, string format, byte[] content, int pokemonId)
     {
         var normalized = (fileName ?? string.Empty).Replace('\\', '/');
         var leafName = normalized[(normalized.LastIndexOf('/') + 1)..];
@@ -535,15 +536,39 @@ public sealed class HouseholdIntegrationService : IHouseholdIntegrationService
 
         if (!string.IsNullOrWhiteSpace(safeName))
         {
+            var extension = Path.GetExtension(safeName);
+            if (string.Equals(extension, ".pkm", StringComparison.OrdinalIgnoreCase))
+            {
+                var detectedFormat = DetectPokemonFormat(content);
+                if (detectedFormat is not null)
+                    return Path.ChangeExtension(safeName, detectedFormat);
+            }
             return safeName;
         }
 
-        var safeFormat = new string(format
+        var safeFormat = DetectPokemonFormat(content) ?? new string(format
             .Where(char.IsAsciiLetterOrDigit)
             .Take(10)
             .ToArray())
             .ToLowerInvariant();
         return $"pokemon-{pokemonId}.{(safeFormat.Length == 0 ? "pkm" : safeFormat)}";
+    }
+
+    private static string? DetectPokemonFormat(byte[] content)
+    {
+        try
+        {
+            var typeName = PKHeX.Core.EntityFormat.GetFromBytes(content)?.GetType().Name;
+            return typeName is not null && typeName.Length is >= 3 and <= 4
+                && typeName.StartsWith('P')
+                && typeName.All(char.IsAsciiLetterOrDigit)
+                ? typeName.ToLowerInvariant()
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static HouseholdServiceResult<HouseholdTokenResponse> InvalidGrant() =>
