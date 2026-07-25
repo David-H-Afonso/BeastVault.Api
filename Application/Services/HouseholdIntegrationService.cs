@@ -238,7 +238,8 @@ public sealed class HouseholdIntegrationService : IHouseholdIntegrationService
             file.OriginalFileName ?? file.FileName,
             file.Format,
             content,
-            pokemonId);
+            pokemonId,
+            file.StoredPath);
         return new HouseholdPokemonDownload(content, fileName);
     }
 
@@ -516,7 +517,7 @@ public sealed class HouseholdIntegrationService : IHouseholdIntegrationService
     private static string[] SplitScopes(string scopes) =>
         scopes.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-    private static string SanitizeDownloadFileName(string? fileName, string format, byte[] content, int pokemonId)
+    private static string SanitizeDownloadFileName(string? fileName, string format, byte[] content, int pokemonId, string? fallbackFileName = null)
     {
         var normalized = (fileName ?? string.Empty).Replace('\\', '/');
         var leafName = normalized[(normalized.LastIndexOf('/') + 1)..];
@@ -539,14 +540,14 @@ public sealed class HouseholdIntegrationService : IHouseholdIntegrationService
             var extension = Path.GetExtension(safeName);
             if (string.Equals(extension, ".pkm", StringComparison.OrdinalIgnoreCase))
             {
-                var detectedFormat = DetectPokemonFormat(content);
+                var detectedFormat = DetectPokemonFormat(content) ?? GetPokemonExtension(fallbackFileName);
                 if (detectedFormat is not null)
                     return Path.ChangeExtension(safeName, detectedFormat);
             }
             return safeName;
         }
 
-        var safeFormat = DetectPokemonFormat(content) ?? new string(format
+        var safeFormat = DetectPokemonFormat(content) ?? GetPokemonExtension(fallbackFileName) ?? new string(format
             .Where(char.IsAsciiLetterOrDigit)
             .Take(10)
             .ToArray())
@@ -569,6 +570,15 @@ public sealed class HouseholdIntegrationService : IHouseholdIntegrationService
         {
             return null;
         }
+    }
+
+    private static string? GetPokemonExtension(string? fileName)
+    {
+        var extension = (Path.GetExtension(fileName) ?? string.Empty).TrimStart('.').ToLowerInvariant();
+        return extension is "pk1" or "pk2" or "pk3" or "pk4" or "pk5" or "pk6" or "pk7" or "pk8" or "pk9"
+            or "pb7" or "pb8" or "pb9" or "pa8" or "pa9"
+            ? extension
+            : null;
     }
 
     private static HouseholdServiceResult<HouseholdTokenResponse> InvalidGrant() =>
