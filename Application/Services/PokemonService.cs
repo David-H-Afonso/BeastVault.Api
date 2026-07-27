@@ -31,6 +31,28 @@ public class PokemonService : IPokemonService
             .AsQueryable();
 
         var query = PokemonQueryService.BuildQuery(baseQuery, q);
+        if (!string.IsNullOrWhiteSpace(q.Search))
+        {
+            var nonTextQuery = q with
+            {
+                Search = null,
+                SearchSpeciesIds = null,
+                SearchHeldItemIds = null,
+                SearchMoveIds = null,
+            };
+            var candidates = await PokemonQueryService.BuildQuery(baseQuery, nonTextQuery)
+                .Include(pokemon => pokemon.PokemonTags)
+                .ThenInclude(pokemonTag => pokemonTag.Tag)
+                .Include(pokemon => pokemon.Moves)
+                .Include(pokemon => pokemon.RelearnMoves)
+                .ToListAsync();
+            var normalizedSearch = SearchTextNormalizer.Normalize(q.Search);
+            var matchingIds = candidates
+                .Where(pokemon => MatchesNormalizedSearch(pokemon, normalizedSearch, q))
+                .Select(pokemon => pokemon.Id)
+                .ToArray();
+            query = PokemonQueryService.BuildQuery(baseQuery.Where(pokemon => matchingIds.Contains(pokemon.Id)), nonTextQuery);
+        }
         var total = await query.CountAsync();
 
         var items = await query
@@ -305,7 +327,7 @@ public class PokemonService : IPokemonService
         if (string.IsNullOrWhiteSpace(q.Search))
             return q;
 
-        var search = q.Search.Trim();
+        var search = SearchTextNormalizer.Normalize(q.Search);
         var speciesIds = PokemonGameInfoService.GetSpeciesIdsByName(search).Distinct().ToArray();
 
         var itemIds = await _db.PokedexItems
@@ -324,10 +346,23 @@ public class PokemonService : IPokemonService
 
         return q with
         {
+            Search = search,
             SearchSpeciesIds = speciesIds,
             SearchHeldItemIds = itemIds,
             SearchMoveIds = moveIds
         };
+    }
+
+    private static bool MatchesNormalizedSearch(PokemonEntity pokemon, string search, AdvancedPokemonQuery query)
+    {
+        return query.SearchSpeciesIds?.Contains(pokemon.SpeciesId) == true
+            || query.SearchHeldItemIds?.Contains(pokemon.HeldItemId) == true
+            || query.SearchMoveIds?.Intersect(pokemon.Moves.Select(move => move.MoveId)).Any() == true
+            || query.SearchMoveIds?.Intersect(pokemon.RelearnMoves.Select(move => move.MoveId)).Any() == true
+            || pokemon.PokemonTags.Any(tag => SearchTextNormalizer.Normalize(tag.Tag.Name).Contains(search, StringComparison.Ordinal))
+            || SearchTextNormalizer.Normalize(pokemon.Nickname).Contains(search, StringComparison.Ordinal)
+            || SearchTextNormalizer.Normalize(pokemon.OtName).Contains(search, StringComparison.Ordinal)
+            || SearchTextNormalizer.Normalize(pokemon.Notes).Contains(search, StringComparison.Ordinal);
     }
 
     /// <summary>
