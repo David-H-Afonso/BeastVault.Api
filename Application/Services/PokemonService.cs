@@ -359,6 +359,7 @@ public class PokemonService : IPokemonService
             || query.SearchHeldItemIds?.Contains(pokemon.HeldItemId) == true
             || query.SearchMoveIds?.Intersect(pokemon.Moves.Select(move => move.MoveId)).Any() == true
             || query.SearchMoveIds?.Intersect(pokemon.RelearnMoves.Select(move => move.MoveId)).Any() == true
+            || SearchTextNormalizer.Normalize(PkHexStringService.GetFormName(pokemon.SpeciesId, pokemon.Form)).Contains(search, StringComparison.Ordinal)
             || pokemon.PokemonTags.Any(tag => SearchTextNormalizer.Normalize(tag.Tag.Name).Contains(search, StringComparison.Ordinal))
             || SearchTextNormalizer.Normalize(pokemon.Nickname).Contains(search, StringComparison.Ordinal)
             || SearchTextNormalizer.Normalize(pokemon.OtName).Contains(search, StringComparison.Ordinal)

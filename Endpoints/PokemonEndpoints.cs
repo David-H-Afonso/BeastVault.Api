@@ -111,6 +111,8 @@ namespace BeastVault.Api.Endpoints
                         item.Id,
                         item.SpeciesId,
                         item.SpeciesName,
+                        item.FormName,
+                        ResolveHouseholdSpriteId(item),
                         item.Nickname,
                         item.Level,
                         item.IsShiny,
@@ -451,6 +453,13 @@ namespace BeastVault.Api.Endpoints
 
             var fallback = PokemonSpritesDto.ForPokemonId(item.SpeciesId);
             return item.IsShiny ? fallback.HomeShiny : fallback.Home;
+        }
+
+        private static int ResolveHouseholdSpriteId(PokemonListItemDto item)
+        {
+            var sprite = item.IsShiny ? item.Sprites?.HomeShiny : item.Sprites?.Home;
+            var fileName = sprite?.TrimEnd('/').Split('/').LastOrDefault()?.Split('.').FirstOrDefault();
+            return int.TryParse(fileName, out var spriteId) && spriteId > 0 ? spriteId : item.SpeciesId;
         }
     }
 }

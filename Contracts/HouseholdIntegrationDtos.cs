@@ -61,6 +61,8 @@ public sealed record HouseholdPokemonListItemDto(
     int Id,
     int SpeciesId,
     string SpeciesName,
+    string FormName,
+    int SpriteId,
     string? Nickname,
     int Level,
     bool IsShiny,
