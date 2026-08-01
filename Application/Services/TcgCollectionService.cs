@@ -17,7 +17,7 @@ public sealed class TcgCollectionService(
     IUserApiCredentialService credentials)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    private const int MaxBatchCards = 50;
+    private const int MaxBatchCards = 10;
     private static readonly Regex CollectorReferencePattern = new(
         @"^\s*(?:(?<code>[A-Za-z][A-Za-z0-9-]{0,11})\s+)?(?<number>\d+)(?:\s*/\s*(?<total>\d+))?\s*$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -279,9 +279,6 @@ public sealed class TcgCollectionService(
         CancellationToken cancellationToken)
     {
         var requestedIds = (request.CardIds ?? []).Where(x => x > 0).Distinct().ToList();
-        if (requestedIds.Count > MaxBatchCards)
-            throw new ArgumentException($"A maximum of {MaxBatchCards} cards can be refreshed at once.");
-
         var truncated = false;
         var requested = requestedIds.Count;
         if (request.OwnedOnly)
@@ -296,6 +293,11 @@ public sealed class TcgCollectionService(
                 .Take(MaxBatchCards + 1).ToListAsync(cancellationToken);
             truncated = ownedIds.Count > MaxBatchCards;
             requestedIds = ownedIds.Take(MaxBatchCards).ToList();
+        }
+        else if (requestedIds.Count > MaxBatchCards)
+        {
+            truncated = true;
+            requestedIds = requestedIds.Take(MaxBatchCards).ToList();
         }
         else if (requestedIds.Count == 0)
         {
@@ -710,10 +712,13 @@ public sealed class TcgCollectionService(
         {
             errors.Add(ProviderError("TCGdex English", exception));
         }
-        try { spanish = await tcgDex.GetCardAsync(entity.ProviderCardId, "es", cancellationToken); }
-        catch (Exception exception) when (IsProviderFailure(exception, cancellationToken))
+        if (english is null)
         {
-            errors.Add(ProviderError("TCGdex Spanish", exception));
+            try { spanish = await tcgDex.GetCardAsync(entity.ProviderCardId, "es", cancellationToken); }
+            catch (Exception exception) when (IsProviderFailure(exception, cancellationToken))
+            {
+                errors.Add(ProviderError("TCGdex Spanish", exception));
+            }
         }
 
         var updated = english is not null || spanish is not null;
@@ -721,7 +726,7 @@ public sealed class TcgCollectionService(
         else errors.Add("TCGdex did not return card detail.");
 
         var apiKey = await credentials.GetTcgApiKeyAsync(userId, cancellationToken);
-        if (!string.IsNullOrWhiteSpace(apiKey))
+        if (!string.IsNullOrWhiteSpace(apiKey) && (entity.PriceEur is null || entity.PriceUsd is null))
         {
             try
             {
@@ -744,7 +749,7 @@ public sealed class TcgCollectionService(
 
         entity.PriceCheckedAt = DateTime.UtcNow;
         var refreshError = string.Join(" ", errors.Distinct());
-        entity.LastRefreshError = errors.Count == 0 && updated
+        entity.LastRefreshError = updated
             ? null
             : refreshError.Length <= 1000 ? refreshError : refreshError[..1000];
         await db.SaveChangesAsync(cancellationToken);

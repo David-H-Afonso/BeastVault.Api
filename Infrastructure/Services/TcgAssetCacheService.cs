@@ -24,6 +24,8 @@ public sealed class TcgAssetCacheService(
         "images.pokemontcg.io"
     };
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> AssetLocks = new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, Lazy<Task<TcgProviderSet?>>> ProviderSetCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly SemaphoreSlim ProviderSetLookupGate = new(2, 2);
     private readonly HttpClient _client = httpClientFactory.CreateClient("TcgDex");
     private readonly ITcgDexProvider _tcgDex = tcgDex;
 
@@ -48,12 +50,11 @@ public sealed class TcgAssetCacheService(
 
         var set = await db.TcgSets.AsNoTracking().SingleOrDefaultAsync(x => x.Id == setId, cancellationToken);
         if (set is null) return null;
-        var source = normalizedKind == "symbol" ? set.SymbolUrl : set.LogoUrl;
         return await GetOrFetchAsync(
             "sets",
             set.Id.ToString(),
             normalizedKind,
-            string.IsNullOrWhiteSpace(source) ? [] : [EnsureImageExtension(source)],
+            BuildSetCandidates(set, normalizedKind),
             cancellationToken);
     }
 
@@ -187,12 +188,12 @@ public sealed class TcgAssetCacheService(
             !string.IsNullOrWhiteSpace(card.Number))
         {
             var localId = card.Number.Split('/', 2)[0].Trim();
-            foreach (var language in new[] { "es", "en", "univ" })
+            foreach (var language in new[] { "en", "es", "univ" })
                 result.Add(BuildTcgDexCardUrl(language, card.Set.SeriesId, card.Set.ProviderSetId, localId, primaryQuality));
 
             if (!string.IsNullOrWhiteSpace(primarySource)) result.Add(primarySource);
 
-            foreach (var language in new[] { "es", "en", "univ" })
+            foreach (var language in new[] { "en", "es", "univ" })
                 result.Add(BuildTcgDexCardUrl(language, card.Set.SeriesId, card.Set.ProviderSetId, localId, alternateQuality));
         }
         else if (!string.IsNullOrWhiteSpace(primarySource))
@@ -218,7 +219,7 @@ public sealed class TcgAssetCacheService(
             try
             {
                 var localId = card.Number.Split('/', 2)[0].Trim();
-                var providerSet = await _tcgDex.GetSetAsync(card.Set.ProviderSetId, "en", cancellationToken);
+                var providerSet = await GetProviderSetAsync(card.Set.ProviderSetId, cancellationToken);
                 var providerCard = providerSet?.Cards.FirstOrDefault(item =>
                     string.Equals(item.Number.Split('/', 2)[0].Trim(), localId, StringComparison.OrdinalIgnoreCase));
                 var source = size == "small" ? providerCard?.ImageSmall : providerCard?.ImageLarge;
@@ -241,8 +242,54 @@ public sealed class TcgAssetCacheService(
         return candidates;
     }
 
+    private async Task<TcgProviderSet?> GetProviderSetAsync(string setId, CancellationToken cancellationToken)
+    {
+        var lazy = new Lazy<Task<TcgProviderSet?>>(
+            () => LoadProviderSetAsync(setId),
+            LazyThreadSafetyMode.ExecutionAndPublication);
+        var cached = ProviderSetCache.GetOrAdd(setId, lazy);
+        var result = await cached.Value.WaitAsync(cancellationToken);
+        if (result is null) ProviderSetCache.TryRemove(setId, out _);
+        return result;
+    }
+
+    private async Task<TcgProviderSet?> LoadProviderSetAsync(string setId)
+    {
+        await ProviderSetLookupGate.WaitAsync(CancellationToken.None);
+        try
+        {
+            return await _tcgDex.GetSetAsync(setId, "en", CancellationToken.None);
+        }
+        catch (HttpRequestException exception)
+        {
+            logger.LogDebug(exception, "TCG set metadata was unavailable: {SetId}", setId);
+            return null;
+        }
+        finally
+        {
+            ProviderSetLookupGate.Release();
+        }
+    }
+
+    private static IReadOnlyList<string> BuildSetCandidates(TcgSetEntity set, string kind)
+    {
+        var source = kind == "symbol" ? set.SymbolUrl : set.LogoUrl;
+        var result = new List<string>();
+        if (!string.IsNullOrWhiteSpace(source)) result.Add(EnsureImageExtension(source));
+        if (set.Provider.Equals("tcgdex", StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(set.SeriesId) &&
+            !string.IsNullOrWhiteSpace(set.ProviderSetId))
+        {
+            result.Insert(0, BuildTcgDexSetUrl("en", set.SeriesId, set.ProviderSetId, kind));
+        }
+        return result;
+    }
+
     private static string BuildTcgDexCardUrl(string language, string seriesId, string setId, string localId, string quality) =>
         $"https://assets.tcgdex.net/{language}/{Uri.EscapeDataString(seriesId)}/{Uri.EscapeDataString(setId)}/{Uri.EscapeDataString(localId)}/{quality}.webp";
+
+    private static string BuildTcgDexSetUrl(string language, string seriesId, string setId, string kind) =>
+        $"https://assets.tcgdex.net/{language}/{Uri.EscapeDataString(seriesId)}/{Uri.EscapeDataString(setId)}/{kind}.webp";
 
     private static string EnsureImageExtension(string source)
     {

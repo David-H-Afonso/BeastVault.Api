@@ -15,30 +15,34 @@ public static class TcgCollectionEndpoints
                 int id,
                 string size,
                 TcgAssetCacheService assets,
+                HttpContext context,
                 CancellationToken cancellationToken) =>
             {
                 var asset = await assets.GetCardAsync(id, size, cancellationToken);
-                return asset is null ? Results.NotFound() : Results.File(asset.Path, asset.ContentType);
+                if (asset is null) return Results.NotFound();
+                context.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+                return Results.File(asset.Path, asset.ContentType, enableRangeProcessing: true);
             })
             .WithName("GetTcgCardAsset")
             .WithTags("TCG assets")
             .AllowAnonymous()
-            .RequireRateLimiting("tcg-provider")
             .Produces(404);
 
         app.MapGet("/tcg/assets/sets/{id:int}/{kind}", async (
                 int id,
                 string kind,
                 TcgAssetCacheService assets,
+                HttpContext context,
                 CancellationToken cancellationToken) =>
             {
                 var asset = await assets.GetSetAsync(id, kind, cancellationToken);
-                return asset is null ? Results.NotFound() : Results.File(asset.Path, asset.ContentType);
+                if (asset is null) return Results.NotFound();
+                context.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+                return Results.File(asset.Path, asset.ContentType, enableRangeProcessing: true);
             })
             .WithName("GetTcgSetAsset")
             .WithTags("TCG assets")
             .AllowAnonymous()
-            .RequireRateLimiting("tcg-provider")
             .Produces(404);
 
         var group = app.MapGroup("/tcg")

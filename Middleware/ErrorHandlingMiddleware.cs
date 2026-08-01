@@ -24,6 +24,10 @@ public class ErrorHandlingMiddleware
         {
             await _next(context);
         }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            // The browser abandoned the request while a provider or asset was loading.
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unhandled exception");
