@@ -3,6 +3,7 @@ using System;
 using BeastVault.Api.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace BeastVault.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260801145102_AddSaveFiles")]
+    partial class AddSaveFiles
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.8");
@@ -1490,153 +1493,6 @@ namespace BeastVault.Api.Migrations
                     b.ToTable("Tags");
                 });
 
-            modelBuilder.Entity("BeastVault.Api.Domain.Entities.TcgCardEntity", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Artist")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("CardmarketUrl")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("DetailedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ImageLarge")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ImageSmall")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("NameEn")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("NationalPokedexNumbersJson")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Number")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("PokemonTcgIoId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<decimal?>("PriceEur")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("PriceUpdatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<decimal?>("PriceUsd")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Provider")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ProviderCardId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Rarity")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("SetId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime>("SyncedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TcgplayerUrl")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("VariantPricesEurJson")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("VariantPricesUsdJson")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("VariantsJson")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Name");
-
-                    b.HasIndex("Provider", "ProviderCardId")
-                        .IsUnique();
-
-                    b.HasIndex("SetId", "Number");
-
-                    b.ToTable("TcgCards");
-                });
-
-            modelBuilder.Entity("BeastVault.Api.Domain.Entities.TcgSetEntity", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime?>("CardsSyncedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("LogoUrl")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("NameEn")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("PrintedTotal")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Provider")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ProviderSetId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("ReleaseDate")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Series")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("SymbolUrl")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("SyncedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Total")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ReleaseDate");
-
-                    b.HasIndex("Provider", "ProviderSetId")
-                        .IsUnique();
-
-                    b.ToTable("TcgSets");
-                });
-
             modelBuilder.Entity("BeastVault.Api.Domain.Entities.User", b =>
                 {
                     b.Property<int>("Id")
@@ -1665,30 +1521,6 @@ namespace BeastVault.Api.Migrations
                         .IsUnique();
 
                     b.ToTable("Users");
-                });
-
-            modelBuilder.Entity("BeastVault.Api.Domain.Entities.UserApiCredentialEntity", b =>
-                {
-                    b.Property<int>("UserId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Provider")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("LastFour")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ProtectedValue")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("UserId", "Provider");
-
-                    b.ToTable("UserApiCredentials");
                 });
 
             modelBuilder.Entity("BeastVault.Api.Domain.Entities.UserPreference", b =>
@@ -1727,54 +1559,6 @@ namespace BeastVault.Api.Migrations
                     b.HasKey("UserId");
 
                     b.ToTable("UserPreferences");
-                });
-
-            modelBuilder.Entity("BeastVault.Api.Domain.Entities.UserTcgCardEntity", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime>("AddedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("CardId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Condition")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Language")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Notes")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Quantity")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("UserId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Variant")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CardId");
-
-                    b.HasIndex("UserId", "AddedAt");
-
-                    b.HasIndex("UserId", "CardId", "Variant", "Condition", "Language")
-                        .IsUnique();
-
-                    b.ToTable("UserTcgCards");
                 });
 
             modelBuilder.Entity("BeastVault.Api.Domain.Entities.FileEntity", b =>
@@ -1997,28 +1781,6 @@ namespace BeastVault.Api.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("BeastVault.Api.Domain.Entities.TcgCardEntity", b =>
-                {
-                    b.HasOne("BeastVault.Api.Domain.Entities.TcgSetEntity", "Set")
-                        .WithMany("Cards")
-                        .HasForeignKey("SetId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Set");
-                });
-
-            modelBuilder.Entity("BeastVault.Api.Domain.Entities.UserApiCredentialEntity", b =>
-                {
-                    b.HasOne("BeastVault.Api.Domain.Entities.User", "User")
-                        .WithMany("ApiCredentials")
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("BeastVault.Api.Domain.Entities.UserPreference", b =>
                 {
                     b.HasOne("BeastVault.Api.Domain.Entities.User", "User")
@@ -2026,25 +1788,6 @@ namespace BeastVault.Api.Migrations
                         .HasForeignKey("BeastVault.Api.Domain.Entities.UserPreference", "UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("BeastVault.Api.Domain.Entities.UserTcgCardEntity", b =>
-                {
-                    b.HasOne("BeastVault.Api.Domain.Entities.TcgCardEntity", "Card")
-                        .WithMany("OwnedEntries")
-                        .HasForeignKey("CardId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("BeastVault.Api.Domain.Entities.User", "User")
-                        .WithMany("TcgCards")
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Card");
 
                     b.Navigation("User");
                 });
@@ -2096,20 +1839,8 @@ namespace BeastVault.Api.Migrations
                     b.Navigation("PokemonTags");
                 });
 
-            modelBuilder.Entity("BeastVault.Api.Domain.Entities.TcgCardEntity", b =>
-                {
-                    b.Navigation("OwnedEntries");
-                });
-
-            modelBuilder.Entity("BeastVault.Api.Domain.Entities.TcgSetEntity", b =>
-                {
-                    b.Navigation("Cards");
-                });
-
             modelBuilder.Entity("BeastVault.Api.Domain.Entities.User", b =>
                 {
-                    b.Navigation("ApiCredentials");
-
                     b.Navigation("Files");
 
                     b.Navigation("HouseholdConnections");
@@ -2123,8 +1854,6 @@ namespace BeastVault.Api.Migrations
                     b.Navigation("SaveFiles");
 
                     b.Navigation("Tags");
-
-                    b.Navigation("TcgCards");
                 });
 #pragma warning restore 612, 618
         }

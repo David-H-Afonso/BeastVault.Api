@@ -18,6 +18,8 @@ namespace BeastVault.Api.Infrastructure.Configuration
         public string PokemonFilesDirectory { get; private set; } = string.Empty;
         public string BackupDirectory { get; private set; } = string.Empty;
         public string TagImagesDirectory { get; private set; } = string.Empty;
+        public string SaveFilesDirectory { get; private set; } = string.Empty;
+        public string DataProtectionKeysDirectory { get; private set; } = string.Empty;
 
         // Información de entorno
         public bool IsDocker { get; private set; }
@@ -36,6 +38,7 @@ namespace BeastVault.Api.Infrastructure.Configuration
             // Configurar rutas
             ConfigureDatabasePath();
             ConfigurePokemonFilesPath();
+            DataProtectionKeysDirectory = Path.Combine(DatabaseDirectory, "data-protection-keys");
 
             // Asegurar que los directorios existan
             EnsureDirectoriesExist();
@@ -175,6 +178,7 @@ namespace BeastVault.Api.Infrastructure.Configuration
             // Tag images live alongside the Pokémon files so they share the same
             // persistent storage volume (e.g. /app/pokemon in Docker).
             TagImagesDirectory = Path.Combine(PokemonFilesDirectory, "tag-images");
+            SaveFilesDirectory = Path.Combine(PokemonFilesDirectory, "saves");
         }
 
         /// <summary>
@@ -205,6 +209,18 @@ namespace BeastVault.Api.Infrastructure.Configuration
                 Directory.CreateDirectory(TagImagesDirectory);
                 Console.WriteLine($"Created tag images directory: {TagImagesDirectory}");
             }
+
+            if (!Directory.Exists(SaveFilesDirectory))
+            {
+                Directory.CreateDirectory(SaveFilesDirectory);
+                Console.WriteLine($"Created save files directory: {SaveFilesDirectory}");
+            }
+
+            if (!Directory.Exists(DataProtectionKeysDirectory))
+            {
+                Directory.CreateDirectory(DataProtectionKeysDirectory);
+                Console.WriteLine($"Created data protection key directory: {DataProtectionKeysDirectory}");
+            }
         }
 
         /// <summary>
@@ -218,6 +234,8 @@ namespace BeastVault.Api.Infrastructure.Configuration
             Console.WriteLine($"Pokemon Files Directory: {PokemonFilesDirectory}");
             Console.WriteLine($"Backup Directory: {BackupDirectory}");
             Console.WriteLine($"Tag Images Directory: {TagImagesDirectory}");
+            Console.WriteLine($"Save Files Directory: {SaveFilesDirectory}");
+            Console.WriteLine($"Data Protection Keys Directory: {DataProtectionKeysDirectory}");
             Console.WriteLine("=======================================");
         }
 
@@ -257,6 +275,8 @@ namespace BeastVault.Api.Infrastructure.Configuration
             // Actualizar rutas
             DatabasePath = newPath;
             DatabaseDirectory = directory ?? string.Empty;
+            DataProtectionKeysDirectory = Path.Combine(DatabaseDirectory, "data-protection-keys");
+            Directory.CreateDirectory(DataProtectionKeysDirectory);
 
             Console.WriteLine($"Database path updated: {DatabasePath}");
             return DatabasePath;
@@ -278,6 +298,7 @@ namespace BeastVault.Api.Infrastructure.Configuration
             PokemonFilesDirectory = newPath;
             BackupDirectory = Path.Combine(newPath, "backup");
             TagImagesDirectory = Path.Combine(newPath, "tag-images");
+            SaveFilesDirectory = Path.Combine(newPath, "saves");
 
             // Asegurar que el directorio de backup existe
             if (!Directory.Exists(BackupDirectory))
@@ -285,6 +306,9 @@ namespace BeastVault.Api.Infrastructure.Configuration
 
             if (!Directory.Exists(TagImagesDirectory))
                 Directory.CreateDirectory(TagImagesDirectory);
+
+            if (!Directory.Exists(SaveFilesDirectory))
+                Directory.CreateDirectory(SaveFilesDirectory);
 
             Console.WriteLine($"Pokemon files path updated: {PokemonFilesDirectory}");
             Console.WriteLine($"Backup directory updated: {BackupDirectory}");

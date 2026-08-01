@@ -31,6 +31,8 @@ namespace BeastVault.Api.Infrastructure.Services
         /// </summary>
         public string GetUserBackupPath(int userId) => Path.Combine(GetUserBasePath(userId), "backup");
 
+        public string GetUserSavesPath(int userId) => Path.Combine(GetUserBasePath(userId), "saves");
+
         public void EnsureVault()
         {
             Directory.CreateDirectory(_basePath);
@@ -46,6 +48,7 @@ namespace BeastVault.Api.Infrastructure.Services
             var userBackupPath = GetUserBackupPath(userId);
             Directory.CreateDirectory(userPath);
             Directory.CreateDirectory(userBackupPath);
+            Directory.CreateDirectory(GetUserSavesPath(userId));
             Console.WriteLine($"Ensured user vault: {userPath}");
         }
 
@@ -164,6 +167,15 @@ namespace BeastVault.Api.Infrastructure.Services
             }
         }
 
+        public bool DeleteUserFile(int userId, string storedPath)
+        {
+            if (!TryResolveUserPath(userId, storedPath, out var fullPath))
+                return false;
+
+            Delete(fullPath);
+            return true;
+        }
+
         public void DeleteBackup(string originalFileName, string ext, int userId, DateTime? importDate = null)
         {
             try
@@ -206,22 +218,7 @@ namespace BeastVault.Api.Infrastructure.Services
 
             try
             {
-                var userRoot = Path.GetFullPath(GetUserBasePath(userId));
-                var candidatePath = Path.IsPathFullyQualified(storedPath)
-                    ? storedPath
-                    : Path.Combine(userRoot, storedPath);
-                var fullPath = Path.GetFullPath(candidatePath);
-                var relativePath = Path.GetRelativePath(userRoot, fullPath);
-
-                if (relativePath == "." ||
-                    Path.IsPathRooted(relativePath) ||
-                    relativePath == ".." ||
-                    relativePath.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal) ||
-                    relativePath.StartsWith($"..{Path.AltDirectorySeparatorChar}", StringComparison.Ordinal))
-                {
-                    return false;
-                }
-
+                if (!TryResolveUserPath(userId, storedPath, out var fullPath)) return false;
                 content = File.ReadAllBytes(fullPath);
                 return true;
             }
@@ -233,6 +230,60 @@ namespace BeastVault.Api.Infrastructure.Services
             {
                 return false;
             }
+        }
+
+        private bool TryResolveUserPath(int userId, string storedPath, out string fullPath)
+        {
+            fullPath = string.Empty;
+            if (userId <= 0 || string.IsNullOrWhiteSpace(storedPath)) return false;
+
+            try
+            {
+                var userRoot = Path.GetFullPath(GetUserBasePath(userId));
+                var candidatePath = Path.IsPathFullyQualified(storedPath)
+                    ? storedPath
+                    : Path.Combine(userRoot, storedPath);
+                fullPath = Path.GetFullPath(candidatePath);
+                var relativePath = Path.GetRelativePath(userRoot, fullPath);
+                return relativePath != "." &&
+                    !Path.IsPathRooted(relativePath) &&
+                    relativePath != ".." &&
+                    !relativePath.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal) &&
+                    !relativePath.StartsWith($"..{Path.AltDirectorySeparatorChar}", StringComparison.Ordinal);
+            }
+            catch (Exception exception) when (exception is
+                ArgumentException or
+                IOException or
+                NotSupportedException or
+                UnauthorizedAccessException)
+            {
+                return false;
+            }
+        }
+
+        public string SaveGameSave(
+            string sha256,
+            string format,
+            byte[] bytes,
+            int userId,
+            int generation,
+            string originalFileName)
+        {
+            var safeFormat = string.IsNullOrWhiteSpace(format) ? "main" : SanitizeFileName(format.TrimStart('.').ToLowerInvariant());
+            var safeOriginalName = SanitizeFileName(Path.GetFileName(originalFileName));
+            if (string.IsNullOrWhiteSpace(safeOriginalName))
+                safeOriginalName = "save";
+
+            var shortHash = sha256.Length > 8 ? sha256[..8] : sha256;
+            var saveDirectory = Path.Combine(GetUserSavesPath(userId), $"gen-{generation}");
+            Directory.CreateDirectory(saveDirectory);
+
+            var baseName = Path.GetFileNameWithoutExtension(safeOriginalName);
+            if (string.IsNullOrWhiteSpace(baseName) || string.Equals(safeOriginalName, "main", StringComparison.OrdinalIgnoreCase))
+                baseName = safeOriginalName;
+            var filePath = Path.Combine(saveDirectory, $"{baseName}_{shortHash}.{safeFormat}");
+            File.WriteAllBytes(filePath, bytes);
+            return filePath;
         }
 
         /// <summary>

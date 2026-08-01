@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.AspNetCore.DataProtection;
 using BeastVault.Api.Configuration;
 using BeastVault.Api.Domain.Entities;
 using BeastVault.Api.Infrastructure;
@@ -71,6 +72,11 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 builder.Services.AddSingleton<StorageConfiguration>();
+builder.Services.AddDataProtection()
+    .SetApplicationName("BeastVault.Api");
+builder.Services.AddSingleton<
+    Microsoft.Extensions.Options.IConfigureOptions<Microsoft.AspNetCore.DataProtection.KeyManagement.KeyManagementOptions>,
+    DataProtectionKeyOptionsSetup>();
 
 // JWT settings — env var overrides
 var jwtSecretEnv = Environment.GetEnvironmentVariable("JWT_SECRET_KEY");
@@ -202,6 +208,30 @@ builder.Services.AddRateLimiter(options =>
         limiter.QueueLimit = 0;
         limiter.AutoReplenishment = true;
     });
+    options.AddPolicy("tcg-provider", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                ?? context.Connection.RemoteIpAddress?.ToString()
+                ?? "anonymous",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 60,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+    options.AddPolicy("tcg-refresh", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                ?? context.Connection.RemoteIpAddress?.ToString()
+                ?? "anonymous",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
 });
 
 // Auth service
@@ -238,6 +268,24 @@ builder.Services.AddHttpClient("JaWiki", client =>
     client.DefaultRequestHeaders.Add("User-Agent", "BeastVault/1.0 (Pokemon collection app)");
     client.Timeout = TimeSpan.FromSeconds(30);
 });
+
+builder.Services.AddHttpClient("TcgDex", client =>
+{
+    client.BaseAddress = new Uri("https://api.tcgdex.net/");
+    client.DefaultRequestHeaders.Add("User-Agent", "BeastVault/1.0 (personal collection manager)");
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.MaxResponseContentBufferSize = 10 * 1024 * 1024;
+})
+.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+
+builder.Services.AddHttpClient("PokemonTcgIo", client =>
+{
+    client.BaseAddress = new Uri("https://api.pokemontcg.io/");
+    client.DefaultRequestHeaders.Add("User-Agent", "BeastVault/1.0 (personal collection manager)");
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.MaxResponseContentBufferSize = 10 * 1024 * 1024;
+})
+.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
 // CORS — read comma-separated origins from CORS_ALLOWED_ORIGINS env var
 var corsOriginsRaw = Environment.GetEnvironmentVariable("CORS_ALLOWED_ORIGINS");
@@ -297,8 +345,8 @@ app.UseMiddleware<ErrorHandlingMiddleware>();
 
 app.UseCors("AllowLocalhost");
 
-app.UseRateLimiter();
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
 
 app.MapHealthChecks();
@@ -306,6 +354,8 @@ app.MapAuthEndpoints();
 app.MapHouseholdIntegrationEndpoints();
 app.MapSpriteEndpoints();
 app.MapImportEndpoints();
+app.MapSaveFileEndpoints();
+app.MapTcgCollectionEndpoints();
 app.MapPokemonEndpoints();
 app.MapTagEndpoints();
 app.MapBoxesEndpoints();
@@ -834,6 +884,163 @@ using (var scope = app.Services.CreateScope())
             ""SpeciesId"" INTEGER,
             ""PokemonId"" INTEGER,
             ""DownloadedAt"" TEXT NOT NULL DEFAULT '2026-01-01T00:00:00Z'");
+
+        await EnsureTableAsync("SaveFiles", @"
+            ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+            ""UserId"" INTEGER NOT NULL,
+            ""Sha256"" TEXT NOT NULL,
+            ""FileName"" TEXT NOT NULL,
+            ""OriginalFileName"" TEXT NOT NULL,
+            ""Format"" TEXT NOT NULL,
+            ""Size"" INTEGER NOT NULL,
+            ""StoredPath"" TEXT NOT NULL,
+            ""RawBlob"" BLOB NOT NULL,
+            ""Generation"" INTEGER NOT NULL,
+            ""OriginGame"" INTEGER NOT NULL,
+            ""GameName"" TEXT NOT NULL,
+            ""SaveType"" TEXT NOT NULL,
+            ""ChecksumsValid"" INTEGER NOT NULL,
+            ""Notes"" TEXT,
+            ""ImportedAt"" TEXT NOT NULL,
+            CONSTRAINT ""FK_SaveFiles_Users_UserId"" FOREIGN KEY (""UserId"") REFERENCES ""Users"" (""Id"") ON DELETE CASCADE)");
+
+        await EnsureTableAsync("SaveTrainers", @"
+            ""SaveFileId"" INTEGER NOT NULL PRIMARY KEY,
+            ""TrainerName"" TEXT NOT NULL,
+            ""TrainerId"" INTEGER NOT NULL,
+            ""SecretId"" INTEGER NOT NULL,
+            ""Gender"" INTEGER NOT NULL,
+            ""Language"" TEXT NOT NULL,
+            ""Money"" INTEGER NOT NULL,
+            ""PlayTimeHours"" INTEGER NOT NULL,
+            ""PlayTimeMinutes"" INTEGER NOT NULL,
+            ""PlayTimeSeconds"" INTEGER NOT NULL,
+            ""BadgeCount"" INTEGER,
+            ""DexSeen"" INTEGER NOT NULL,
+            ""DexCaught"" INTEGER NOT NULL,
+            CONSTRAINT ""FK_SaveTrainers_SaveFiles_SaveFileId"" FOREIGN KEY (""SaveFileId"") REFERENCES ""SaveFiles"" (""Id"") ON DELETE CASCADE)");
+
+        await EnsureTableAsync("SavePokedexEntries", @"
+            ""SaveFileId"" INTEGER NOT NULL,
+            ""SpeciesId"" INTEGER NOT NULL,
+            ""SpeciesName"" TEXT NOT NULL,
+            ""Seen"" INTEGER NOT NULL,
+            ""Caught"" INTEGER NOT NULL,
+            CONSTRAINT ""PK_SavePokedexEntries"" PRIMARY KEY (""SaveFileId"", ""SpeciesId""),
+            CONSTRAINT ""FK_SavePokedexEntries_SaveFiles_SaveFileId"" FOREIGN KEY (""SaveFileId"") REFERENCES ""SaveFiles"" (""Id"") ON DELETE CASCADE)");
+
+        await EnsureTableAsync("SavePokemonPreviews", @"
+            ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+            ""SaveFileId"" INTEGER NOT NULL,
+            ""Location"" INTEGER NOT NULL,
+            ""BoxIndex"" INTEGER,
+            ""SlotIndex"" INTEGER NOT NULL,
+            ""SpeciesId"" INTEGER NOT NULL,
+            ""SpeciesName"" TEXT NOT NULL,
+            ""Nickname"" TEXT,
+            ""Level"" INTEGER NOT NULL,
+            ""IsShiny"" INTEGER NOT NULL,
+            ""IsEgg"" INTEGER NOT NULL,
+            ""Form"" INTEGER NOT NULL,
+            ""Gender"" INTEGER NOT NULL,
+            ""Nature"" INTEGER NOT NULL,
+            ""NatureName"" TEXT NOT NULL,
+            ""AbilityName"" TEXT NOT NULL,
+            ""HeldItemName"" TEXT NOT NULL,
+            ""MovesJson"" TEXT NOT NULL,
+            ""PokemonHash"" TEXT NOT NULL,
+            ""PokemonStoredHash"" TEXT NOT NULL,
+            CONSTRAINT ""FK_SavePokemonPreviews_SaveFiles_SaveFileId"" FOREIGN KEY (""SaveFileId"") REFERENCES ""SaveFiles"" (""Id"") ON DELETE CASCADE)");
+
+        foreach (var sql in new[]
+        {
+            @"CREATE INDEX IF NOT EXISTS ""IX_SaveFiles_UserId_ImportedAt"" ON ""SaveFiles"" (""UserId"", ""ImportedAt"")",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_SaveFiles_UserId_Sha256"" ON ""SaveFiles"" (""UserId"", ""Sha256"")",
+            @"CREATE INDEX IF NOT EXISTS ""IX_SavePokemonPreviews_PokemonHash"" ON ""SavePokemonPreviews"" (""PokemonHash"")",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_SavePokemonPreviews_SaveFileId_Location_BoxIndex_SlotIndex"" ON ""SavePokemonPreviews"" (""SaveFileId"", ""Location"", ""BoxIndex"", ""SlotIndex"")"
+        })
+        {
+            await ExecutePatchSqlAsync(sql);
+        }
+
+        await EnsureTableAsync("TcgSets", @"
+            ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+            ""Provider"" TEXT NOT NULL,
+            ""ProviderSetId"" TEXT NOT NULL,
+            ""Name"" TEXT NOT NULL,
+            ""NameEn"" TEXT,
+            ""Series"" TEXT,
+            ""PrintedTotal"" INTEGER NOT NULL,
+            ""Total"" INTEGER NOT NULL,
+            ""ReleaseDate"" TEXT,
+            ""SymbolUrl"" TEXT,
+            ""LogoUrl"" TEXT,
+            ""SyncedAt"" TEXT NOT NULL,
+            ""CardsSyncedAt"" TEXT)");
+
+        await EnsureTableAsync("TcgCards", @"
+            ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+            ""SetId"" INTEGER NOT NULL,
+            ""Provider"" TEXT NOT NULL,
+            ""ProviderCardId"" TEXT NOT NULL,
+            ""PokemonTcgIoId"" TEXT,
+            ""Name"" TEXT NOT NULL,
+            ""NameEn"" TEXT,
+            ""Number"" TEXT NOT NULL,
+            ""Rarity"" TEXT,
+            ""Artist"" TEXT,
+            ""ImageSmall"" TEXT,
+            ""ImageLarge"" TEXT,
+            ""NationalPokedexNumbersJson"" TEXT NOT NULL,
+            ""VariantsJson"" TEXT NOT NULL,
+            ""PriceEur"" TEXT,
+            ""PriceUsd"" TEXT,
+            ""VariantPricesEurJson"" TEXT NOT NULL,
+            ""VariantPricesUsdJson"" TEXT NOT NULL,
+            ""PriceUpdatedAt"" TEXT,
+            ""CardmarketUrl"" TEXT,
+            ""TcgplayerUrl"" TEXT,
+            ""SyncedAt"" TEXT NOT NULL,
+            ""DetailedAt"" TEXT,
+            CONSTRAINT ""FK_TcgCards_TcgSets_SetId"" FOREIGN KEY (""SetId"") REFERENCES ""TcgSets"" (""Id"") ON DELETE CASCADE)");
+
+        await EnsureTableAsync("UserTcgCards", @"
+            ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+            ""UserId"" INTEGER NOT NULL,
+            ""CardId"" INTEGER NOT NULL,
+            ""Variant"" TEXT NOT NULL,
+            ""Condition"" TEXT NOT NULL,
+            ""Language"" TEXT NOT NULL,
+            ""Quantity"" INTEGER NOT NULL,
+            ""Notes"" TEXT,
+            ""AddedAt"" TEXT NOT NULL,
+            ""UpdatedAt"" TEXT NOT NULL,
+            CONSTRAINT ""FK_UserTcgCards_Users_UserId"" FOREIGN KEY (""UserId"") REFERENCES ""Users"" (""Id"") ON DELETE CASCADE,
+            CONSTRAINT ""FK_UserTcgCards_TcgCards_CardId"" FOREIGN KEY (""CardId"") REFERENCES ""TcgCards"" (""Id"") ON DELETE CASCADE)");
+
+        await EnsureTableAsync("UserApiCredentials", @"
+            ""UserId"" INTEGER NOT NULL,
+            ""Provider"" TEXT NOT NULL,
+            ""ProtectedValue"" TEXT NOT NULL,
+            ""LastFour"" TEXT NOT NULL,
+            ""UpdatedAt"" TEXT NOT NULL,
+            CONSTRAINT ""PK_UserApiCredentials"" PRIMARY KEY (""UserId"", ""Provider""),
+            CONSTRAINT ""FK_UserApiCredentials_Users_UserId"" FOREIGN KEY (""UserId"") REFERENCES ""Users"" (""Id"") ON DELETE CASCADE)");
+
+        foreach (var sql in new[]
+        {
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_TcgSets_Provider_ProviderSetId"" ON ""TcgSets"" (""Provider"", ""ProviderSetId"")",
+            @"CREATE INDEX IF NOT EXISTS ""IX_TcgSets_ReleaseDate"" ON ""TcgSets"" (""ReleaseDate"")",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_TcgCards_Provider_ProviderCardId"" ON ""TcgCards"" (""Provider"", ""ProviderCardId"")",
+            @"CREATE INDEX IF NOT EXISTS ""IX_TcgCards_SetId_Number"" ON ""TcgCards"" (""SetId"", ""Number"")",
+            @"CREATE INDEX IF NOT EXISTS ""IX_TcgCards_Name"" ON ""TcgCards"" (""Name"")",
+            @"CREATE INDEX IF NOT EXISTS ""IX_UserTcgCards_CardId"" ON ""UserTcgCards"" (""CardId"")",
+            @"CREATE INDEX IF NOT EXISTS ""IX_UserTcgCards_UserId_AddedAt"" ON ""UserTcgCards"" (""UserId"", ""AddedAt"")",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_UserTcgCards_UserId_CardId_Variant_Condition_Language"" ON ""UserTcgCards"" (""UserId"", ""CardId"", ""Variant"", ""Condition"", ""Language"")"
+        })
+        {
+            await ExecutePatchSqlAsync(sql);
+        }
     }
     catch (Exception ex)
     {

@@ -35,6 +35,14 @@ namespace BeastVault.Api.Infrastructure
         public DbSet<HouseholdAuthorizationCode> HouseholdAuthorizationCodes => Set<HouseholdAuthorizationCode>();
         public DbSet<HouseholdAccessToken> HouseholdAccessTokens => Set<HouseholdAccessToken>();
         public DbSet<HouseholdRefreshToken> HouseholdRefreshTokens => Set<HouseholdRefreshToken>();
+        public DbSet<SaveFileEntity> SaveFiles => Set<SaveFileEntity>();
+        public DbSet<SaveTrainerEntity> SaveTrainers => Set<SaveTrainerEntity>();
+        public DbSet<SavePokedexEntryEntity> SavePokedexEntries => Set<SavePokedexEntryEntity>();
+        public DbSet<SavePokemonPreviewEntity> SavePokemonPreviews => Set<SavePokemonPreviewEntity>();
+        public DbSet<TcgSetEntity> TcgSets => Set<TcgSetEntity>();
+        public DbSet<TcgCardEntity> TcgCards => Set<TcgCardEntity>();
+        public DbSet<UserTcgCardEntity> UserTcgCards => Set<UserTcgCardEntity>();
+        public DbSet<UserApiCredentialEntity> UserApiCredentials => Set<UserApiCredentialEntity>();
 
         protected override void OnModelCreating(ModelBuilder b)
         {
@@ -159,6 +167,75 @@ namespace BeastVault.Api.Infrastructure
                 .HasOne(x => x.Pokemon)
                 .WithOne(p => p.BoxSlot)
                 .HasForeignKey<PokemonBoxSlotEntity>(x => x.PokemonId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            b.Entity<SaveFileEntity>().HasKey(x => x.Id);
+            b.Entity<SaveFileEntity>().HasIndex(x => new { x.UserId, x.Sha256 }).IsUnique();
+            b.Entity<SaveFileEntity>().HasIndex(x => new { x.UserId, x.ImportedAt });
+            b.Entity<SaveFileEntity>()
+                .HasOne(x => x.User)
+                .WithMany(x => x.SaveFiles)
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            b.Entity<SaveTrainerEntity>().HasKey(x => x.SaveFileId);
+            b.Entity<SaveTrainerEntity>()
+                .HasOne(x => x.SaveFile)
+                .WithOne(x => x.Trainer)
+                .HasForeignKey<SaveTrainerEntity>(x => x.SaveFileId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            b.Entity<SavePokedexEntryEntity>().HasKey(x => new { x.SaveFileId, x.SpeciesId });
+            b.Entity<SavePokedexEntryEntity>()
+                .HasOne(x => x.SaveFile)
+                .WithMany(x => x.PokedexEntries)
+                .HasForeignKey(x => x.SaveFileId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            b.Entity<SavePokemonPreviewEntity>().HasKey(x => x.Id);
+            b.Entity<SavePokemonPreviewEntity>().HasIndex(x => new { x.SaveFileId, x.Location, x.BoxIndex, x.SlotIndex }).IsUnique();
+            b.Entity<SavePokemonPreviewEntity>().HasIndex(x => x.PokemonHash);
+            b.Entity<SavePokemonPreviewEntity>()
+                .HasOne(x => x.SaveFile)
+                .WithMany(x => x.PokemonPreviews)
+                .HasForeignKey(x => x.SaveFileId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            b.Entity<TcgSetEntity>().HasKey(x => x.Id);
+            b.Entity<TcgSetEntity>().HasIndex(x => new { x.Provider, x.ProviderSetId }).IsUnique();
+            b.Entity<TcgSetEntity>().HasIndex(x => x.ReleaseDate);
+
+            b.Entity<TcgCardEntity>().HasKey(x => x.Id);
+            b.Entity<TcgCardEntity>().HasIndex(x => new { x.Provider, x.ProviderCardId }).IsUnique();
+            b.Entity<TcgCardEntity>().HasIndex(x => new { x.SetId, x.Number });
+            b.Entity<TcgCardEntity>().HasIndex(x => x.Name);
+            b.Entity<TcgCardEntity>()
+                .HasOne(x => x.Set)
+                .WithMany(x => x.Cards)
+                .HasForeignKey(x => x.SetId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            b.Entity<UserTcgCardEntity>().HasKey(x => x.Id);
+            b.Entity<UserTcgCardEntity>()
+                .HasIndex(x => new { x.UserId, x.CardId, x.Variant, x.Condition, x.Language })
+                .IsUnique();
+            b.Entity<UserTcgCardEntity>().HasIndex(x => new { x.UserId, x.AddedAt });
+            b.Entity<UserTcgCardEntity>()
+                .HasOne(x => x.User)
+                .WithMany(x => x.TcgCards)
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            b.Entity<UserTcgCardEntity>()
+                .HasOne(x => x.Card)
+                .WithMany(x => x.OwnedEntries)
+                .HasForeignKey(x => x.CardId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            b.Entity<UserApiCredentialEntity>().HasKey(x => new { x.UserId, x.Provider });
+            b.Entity<UserApiCredentialEntity>()
+                .HasOne(x => x.User)
+                .WithMany(x => x.ApiCredentials)
+                .HasForeignKey(x => x.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             // Bulbapedia and enrichment entities

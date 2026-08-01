@@ -42,6 +42,12 @@ public static class ServiceCollectionExtensions
         });
 
         services.AddScoped<PkhexCoreParser>();
+        services.AddScoped<PkhexSaveParser>();
+        services.AddScoped<SaveFileService>();
+        services.AddScoped<TcgCollectionService>();
+        services.AddScoped<IUserApiCredentialService, UserApiCredentialService>();
+        services.AddScoped<ITcgDexProvider, TcgDexProvider>();
+        services.AddScoped<IPokemonTcgIoProvider, PokemonTcgIoProvider>();
         services.AddScoped<FileWatcherService>();
         services.AddScoped<IPokemonService, PokemonService>();
         services.AddScoped<ITagService, TagService>();
