@@ -8,6 +8,8 @@ public class TcgSetEntity
     public string Name { get; set; } = string.Empty;
     public string? NameEn { get; set; }
     public string? Series { get; set; }
+    public string? SeriesId { get; set; }
+    public string? OfficialCode { get; set; }
     public int PrintedTotal { get; set; }
     public int Total { get; set; }
     public DateTime? ReleaseDate { get; set; }
@@ -40,6 +42,8 @@ public class TcgCardEntity
     public string VariantPricesEurJson { get; set; } = "{}";
     public string VariantPricesUsdJson { get; set; } = "{}";
     public DateTime? PriceUpdatedAt { get; set; }
+    public DateTime? PriceCheckedAt { get; set; }
+    public string? LastRefreshError { get; set; }
     public string? CardmarketUrl { get; set; }
     public string? TcgplayerUrl { get; set; }
     public DateTime SyncedAt { get; set; } = DateTime.UtcNow;

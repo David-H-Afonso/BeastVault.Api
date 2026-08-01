@@ -80,7 +80,8 @@ public sealed class TcgCollectionTests : IClassFixture<HouseholdApiFactory>
             var item = Assert.Single(json.RootElement.GetProperty("items").EnumerateArray());
             Assert.Equal("Charmander", item.GetProperty("card").GetProperty("name").GetString());
             Assert.Equal(50m, item.GetProperty("totalValueEur").GetDecimal());
-            Assert.Equal("ES", item.GetProperty("language").GetString());
+            var entry = Assert.Single(item.GetProperty("entries").EnumerateArray());
+            Assert.Equal("ES", entry.GetProperty("language").GetString());
         }
 
         var stats = await SendAsync(HttpMethod.Get, "/tcg/collection/stats", userA.Token);
@@ -132,7 +133,123 @@ public sealed class TcgCollectionTests : IClassFixture<HouseholdApiFactory>
             (await SendAsync(HttpMethod.Delete, $"/tcg/collection/{entryId}", userA.Token)).StatusCode);
     }
 
-    private async Task<JsonElement> AddAsync(string token, int cardId, int quantity)
+    [Fact]
+    public async Task Collection_PagesUniqueCardsAndReturnsEveryOwnedEntry()
+    {
+        var user = await RegisterAsync(Unique("tcg-grouped"));
+        var (_, charmanderId, reshiramId) = await SeedCatalogAsync();
+        await AddAsync(user.Token, charmanderId, 2, "normal", "NM", "ES");
+        await AddAsync(user.Token, charmanderId, 1, "reverse", "LP", "EN");
+        await AddAsync(user.Token, reshiramId, 1);
+
+        var firstResponse = await SendAsync(HttpMethod.Get, "/tcg/collection?page=1&pageSize=1", user.Token);
+        var secondResponse = await SendAsync(HttpMethod.Get, "/tcg/collection?page=2&pageSize=1", user.Token);
+        firstResponse.EnsureSuccessStatusCode();
+        secondResponse.EnsureSuccessStatusCode();
+        using var first = JsonDocument.Parse(await firstResponse.Content.ReadAsStringAsync());
+        using var second = JsonDocument.Parse(await secondResponse.Content.ReadAsStringAsync());
+
+        Assert.Equal(2, first.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(2, second.RootElement.GetProperty("totalCount").GetInt32());
+        var groups = first.RootElement.GetProperty("items").EnumerateArray()
+            .Concat(second.RootElement.GetProperty("items").EnumerateArray())
+            .ToList();
+        Assert.Equal(2, groups.Count);
+        var charmander = Assert.Single(groups, item => item.GetProperty("card").GetProperty("name").GetString() == "Charmander");
+        Assert.Equal(2, charmander.GetProperty("entries").GetArrayLength());
+        Assert.Equal(3, charmander.GetProperty("totalCopies").GetInt32());
+        Assert.Equal(30m, charmander.GetProperty("totalValueEur").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Add_SparseCardDoesNotRequireProviderRefresh()
+    {
+        var user = await RegisterAsync(Unique("tcg-sparse"));
+        var (_, charmanderId, _) = await SeedCatalogAsync();
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var card = await db.TcgCards.SingleAsync(x => x.Id == charmanderId);
+            card.DetailedAt = null;
+            card.PriceEur = null;
+            card.PriceUsd = null;
+            card.ImageSmall = null;
+            card.ImageLarge = null;
+            card.PriceCheckedAt = DateTime.UtcNow;
+            card.LastRefreshError = "Provider unavailable.";
+            await db.SaveChangesAsync();
+        }
+
+        var added = await AddAsync(user.Token, charmanderId, 1);
+
+        Assert.Equal(charmanderId, added.GetProperty("card").GetProperty("id").GetInt32());
+        Assert.Equal(1, added.GetProperty("quantity").GetInt32());
+        Assert.Equal("Provider unavailable.", added.GetProperty("card").GetProperty("lastRefreshError").GetString());
+    }
+
+    [Fact]
+    public async Task BatchDelete_IsScopedToTheAuthenticatedUser()
+    {
+        var userA = await RegisterAsync(Unique("tcg-batch-a"));
+        var userB = await RegisterAsync(Unique("tcg-batch-b"));
+        var (_, charmanderId, _) = await SeedCatalogAsync();
+        await AddAsync(userA.Token, charmanderId, 1, "normal", "NM", "ES");
+        await AddAsync(userA.Token, charmanderId, 1, "reverse", "LP", "EN");
+        await AddAsync(userB.Token, charmanderId, 4, "normal", "NM", "ES");
+
+        var deleted = await SendAsync(
+            HttpMethod.Delete,
+            "/tcg/collection/cards",
+            userA.Token,
+            JsonContent.Create(new { cardIds = new[] { charmanderId } }));
+        deleted.EnsureSuccessStatusCode();
+        using (var json = JsonDocument.Parse(await deleted.Content.ReadAsStringAsync()))
+        {
+            Assert.Equal(1, json.RootElement.GetProperty("deletedCards").GetInt32());
+            Assert.Equal(2, json.RootElement.GetProperty("deletedEntries").GetInt32());
+        }
+
+        var collectionA = await SendAsync(HttpMethod.Get, "/tcg/collection", userA.Token);
+        var collectionB = await SendAsync(HttpMethod.Get, "/tcg/collection", userB.Token);
+        using var jsonA = JsonDocument.Parse(await collectionA.Content.ReadAsStringAsync());
+        using var jsonB = JsonDocument.Parse(await collectionB.Content.ReadAsStringAsync());
+        Assert.Equal(0, jsonA.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(1, jsonB.RootElement.GetProperty("totalCount").GetInt32());
+        var ownedByB = Assert.Single(jsonB.RootElement.GetProperty("items").EnumerateArray());
+        Assert.Equal(4, ownedByB.GetProperty("totalCopies").GetInt32());
+    }
+
+    [Fact]
+    public async Task CardDto_UsesLocalAssetUrlAndDisallowedSourceReturnsNotFound()
+    {
+        var user = await RegisterAsync(Unique("tcg-assets"));
+        var (_, charmanderId, _) = await SeedCatalogAsync();
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var card = await db.TcgCards.SingleAsync(x => x.Id == charmanderId);
+            card.ImageSmall = "https://untrusted.example/card.webp";
+            await db.SaveChangesAsync();
+        }
+
+        var cardResponse = await SendAsync(HttpMethod.Get, $"/tcg/cards/{charmanderId}", user.Token);
+        cardResponse.EnsureSuccessStatusCode();
+        using (var json = JsonDocument.Parse(await cardResponse.Content.ReadAsStringAsync()))
+        {
+            Assert.Equal($"/tcg/assets/cards/{charmanderId}/small", json.RootElement.GetProperty("imageSmall").GetString());
+        }
+
+        var assetResponse = await _client.GetAsync($"/tcg/assets/cards/{charmanderId}/small");
+        Assert.Equal(HttpStatusCode.NotFound, assetResponse.StatusCode);
+    }
+
+    private async Task<JsonElement> AddAsync(
+        string token,
+        int cardId,
+        int quantity,
+        string variant = "normal",
+        string condition = "NM",
+        string language = "ES")
     {
         var response = await SendAsync(
             HttpMethod.Post,
@@ -141,9 +258,9 @@ public sealed class TcgCollectionTests : IClassFixture<HouseholdApiFactory>
             JsonContent.Create(new
             {
                 cardId,
-                variant = "normal",
-                condition = "NM",
-                language = "ES",
+                variant,
+                condition,
+                language,
                 quantity,
                 notes = "Binder"
             }));

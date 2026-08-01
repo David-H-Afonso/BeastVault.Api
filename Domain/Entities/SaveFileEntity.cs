@@ -22,6 +22,7 @@ public class SaveFileEntity
     public required string GameName { get; set; }
     public required string SaveType { get; set; }
     public bool ChecksumsValid { get; set; }
+    public string? Title { get; set; }
     public string? Notes { get; set; }
     public DateTime ImportedAt { get; set; } = DateTime.UtcNow;
 

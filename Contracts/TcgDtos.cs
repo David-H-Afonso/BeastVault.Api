@@ -34,7 +34,10 @@ public sealed record TcgCardDto(
     string SetName,
     TcgPriceDto Prices,
     IReadOnlyList<TcgOwnedEntryDto> Owned,
-    int TotalOwned);
+    int TotalOwned,
+    DateTime? DetailedAt,
+    DateTime? PriceCheckedAt,
+    string? LastRefreshError);
 
 public sealed record TcgCardPageDto(
     IReadOnlyList<TcgCardDto> Items,
@@ -49,6 +52,8 @@ public sealed record TcgSetDto(
     string Name,
     string? NameEn,
     string? Series,
+    string? SeriesId,
+    string? OfficialCode,
     int PrintedTotal,
     int Total,
     DateTime? ReleaseDate,
@@ -73,10 +78,32 @@ public sealed record UserCardDto(
     decimal? TotalValueUsd);
 
 public sealed record TcgCollectionPageDto(
-    IReadOnlyList<UserCardDto> Items,
+    IReadOnlyList<TcgCollectionCardDto> Items,
     int Page,
     int PageSize,
     int TotalCount);
+
+public sealed record TcgCollectionEntryDto(
+    int Id,
+    string Variant,
+    string Condition,
+    string Language,
+    int Quantity,
+    string? Notes,
+    DateTime AddedAt,
+    DateTime UpdatedAt,
+    decimal? UnitValueEur,
+    decimal? UnitValueUsd,
+    decimal? TotalValueEur,
+    decimal? TotalValueUsd);
+
+public sealed record TcgCollectionCardDto(
+    TcgCardDto Card,
+    IReadOnlyList<TcgCollectionEntryDto> Entries,
+    int TotalCopies,
+    decimal TotalValueEur,
+    decimal TotalValueUsd,
+    DateTime UpdatedAt);
 
 public sealed record TcgMissingSpeciesDto(int SpeciesId, string SpeciesName);
 
@@ -119,6 +146,29 @@ public sealed record UpdateTcgCollectionEntryRequest(
     string? Language = null,
     int? Quantity = null,
     string? Notes = null);
+
+public sealed record DeleteTcgCardsRequest(IReadOnlyList<int>? CardIds);
+
+public sealed record DeleteTcgCardsResultDto(
+    int RequestedCards,
+    int DeletedCards,
+    int DeletedEntries);
+
+public sealed record TcgBatchRefreshRequest(
+    IReadOnlyList<int>? CardIds = null,
+    bool OwnedOnly = false);
+
+public sealed record TcgCardRefreshResultDto(
+    int CardId,
+    bool Success,
+    string? Error,
+    TcgCardDto? Card);
+
+public sealed record TcgBatchRefreshResultDto(
+    IReadOnlyList<TcgCardRefreshResultDto> Items,
+    int Requested,
+    int Processed,
+    bool Truncated);
 
 public sealed record TcgApiKeyStatusDto(
     bool Configured,

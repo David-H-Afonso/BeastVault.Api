@@ -34,7 +34,8 @@ public sealed class PokemonTcgIoProvider(IHttpClientFactory httpClientFactory) :
             eur = FirstPositive(cmPrices, "trendPrice", "averageSellPrice", "avg7", "lowPrice");
         if (eur.HasValue) variantsEur["normal"] = eur.Value;
 
-        if (tcgplayer.ValueKind == JsonValueKind.Object && tcgplayer.TryGetProperty("prices", out var tpPrices))
+        if (tcgplayer.ValueKind == JsonValueKind.Object && tcgplayer.TryGetProperty("prices", out var tpPrices) &&
+            tpPrices.ValueKind == JsonValueKind.Object)
         {
             foreach (var property in tpPrices.EnumerateObject())
             {
@@ -63,26 +64,34 @@ public sealed class PokemonTcgIoProvider(IHttpClientFactory httpClientFactory) :
             variantsUsd,
             Latest(ParseDate(GetString(cardmarket, "updatedAt")), ParseDate(GetString(tcgplayer, "updatedAt"))),
             AllowHttpsUrl(GetString(cardmarket, "url"), "prices.pokemontcg.io", "cardmarket.com"),
-            AllowHttpsUrl(GetString(tcgplayer, "url"), "prices.pokemontcg.io", "tcgplayer.com"));
+            AllowHttpsUrl(GetString(tcgplayer, "url"), "prices.pokemontcg.io", "tcgplayer.com"),
+            IsComplete: true);
     }
 
     private static string? GetString(JsonElement value, string property) =>
         value.ValueKind == JsonValueKind.Object && value.TryGetProperty(property, out var item) && item.ValueKind == JsonValueKind.String ? item.GetString() : null;
 
     private static List<int> GetIntArray(JsonElement value, string property) =>
-        value.TryGetProperty(property, out var item) && item.ValueKind == JsonValueKind.Array
-            ? item.EnumerateArray().Where(x => x.TryGetInt32(out _)).Select(x => x.GetInt32()).Distinct().ToList()
+        value.ValueKind == JsonValueKind.Object && value.TryGetProperty(property, out var item) && item.ValueKind == JsonValueKind.Array
+            ? item.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.Number && x.TryGetInt32(out _))
+                .Select(x => x.GetInt32()).Distinct().ToList()
             : [];
 
     private static decimal? FirstPositive(JsonElement value, params string[] properties)
     {
         foreach (var property in properties)
-            if (value.TryGetProperty(property, out var item) && item.TryGetDecimal(out var result) && result > 0) return result;
+            if (value.ValueKind == JsonValueKind.Object && value.TryGetProperty(property, out var item) &&
+                item.ValueKind == JsonValueKind.Number && item.TryGetDecimal(out var result) && result > 0) return result;
         return null;
     }
 
     private static DateTime? ParseDate(string? value) => DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var result) ? result : null;
-    private static DateTime? Latest(DateTime? first, DateTime? second) => first > second ? first : second;
+    private static DateTime? Latest(DateTime? first, DateTime? second)
+    {
+        if (!first.HasValue) return second;
+        if (!second.HasValue) return first;
+        return first.Value >= second.Value ? first : second;
+    }
 
     private static string? AllowHttpsUrl(string? value, params string[] hosts)
     {

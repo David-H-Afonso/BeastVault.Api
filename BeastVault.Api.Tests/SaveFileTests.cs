@@ -53,6 +53,7 @@ public sealed class SaveFileTests : IClassFixture<HouseholdApiFactory>
                     TrainerName = "Juliana",
                     TrainerId = 123456,
                     SecretId = 1234,
+                    Gender = 1,
                     Language = "SPA",
                     PlayTimeHours = 42,
                     DexSeen = 100,
@@ -97,7 +98,12 @@ public sealed class SaveFileTests : IClassFixture<HouseholdApiFactory>
         {
             var save = Assert.Single(json.RootElement.EnumerateArray());
             Assert.Equal(saveId, save.GetProperty("id").GetInt32());
+            Assert.Equal("main", save.GetProperty("originalFileName").GetString());
+            Assert.Equal(JsonValueKind.Null, save.GetProperty("title").ValueKind);
+            Assert.Equal("Violet", save.GetProperty("displayTitle").GetString());
             Assert.Equal("Juliana", save.GetProperty("trainerName").GetString());
+            Assert.Equal(1, save.GetProperty("trainerGender").GetInt32());
+            Assert.Equal(18, save.GetProperty("badgeTotal").GetInt32());
             Assert.Equal(1, save.GetProperty("partyCount").GetInt32());
         }
 
@@ -108,6 +114,67 @@ public sealed class SaveFileTests : IClassFixture<HouseholdApiFactory>
             Assert.Equal("SPA", json.RootElement.GetProperty("trainer").GetProperty("language").GetString());
             Assert.Single(json.RootElement.GetProperty("pokedex").EnumerateArray());
             Assert.Single(json.RootElement.GetProperty("pokemon").EnumerateArray());
+        }
+
+        var scopedUpdate = await SendAsync(
+            HttpMethod.Patch,
+            $"/saves/{saveId}",
+            userB.Token,
+            JsonContent.Create(new { title = "Not yours", notes = "Not yours" }));
+        Assert.Equal(HttpStatusCode.NotFound, scopedUpdate.StatusCode);
+
+        var afterScopedUpdate = await SendAsync(HttpMethod.Get, $"/saves/{saveId}", userA.Token);
+        afterScopedUpdate.EnsureSuccessStatusCode();
+        using (var json = JsonDocument.Parse(await afterScopedUpdate.Content.ReadAsStringAsync()))
+        {
+            Assert.Equal(JsonValueKind.Null, json.RootElement.GetProperty("summary").GetProperty("title").ValueKind);
+        }
+
+        var oversizedTitle = await SendAsync(
+            HttpMethod.Patch,
+            $"/saves/{saveId}",
+            userA.Token,
+            JsonContent.Create(new { title = new string('x', 121), notes = (string?)null }));
+        Assert.Equal(HttpStatusCode.BadRequest, oversizedTitle.StatusCode);
+
+        var oversizedNotes = await SendAsync(
+            HttpMethod.Patch,
+            $"/saves/{saveId}",
+            userA.Token,
+            JsonContent.Create(new { title = (string?)null, notes = new string('x', 4001) }));
+        Assert.Equal(HttpStatusCode.BadRequest, oversizedNotes.StatusCode);
+
+        var update = await SendAsync(
+            HttpMethod.Patch,
+            $"/saves/{saveId}",
+            userA.Token,
+            JsonContent.Create(new { title = "  Violet living dex  ", notes = "  Complete the dex  " }));
+        Assert.Equal(HttpStatusCode.NoContent, update.StatusCode);
+
+        var updatedDetail = await SendAsync(HttpMethod.Get, $"/saves/{saveId}", userA.Token);
+        updatedDetail.EnsureSuccessStatusCode();
+        using (var json = JsonDocument.Parse(await updatedDetail.Content.ReadAsStringAsync()))
+        {
+            var summary = json.RootElement.GetProperty("summary");
+            Assert.Equal("Violet living dex", summary.GetProperty("title").GetString());
+            Assert.Equal("Violet living dex", summary.GetProperty("displayTitle").GetString());
+            Assert.Equal("Complete the dex", summary.GetProperty("notes").GetString());
+        }
+
+        var clearTitle = await SendAsync(
+            HttpMethod.Patch,
+            $"/saves/{saveId}",
+            userA.Token,
+            JsonContent.Create(new { title = "   ", notes = (string?)null }));
+        Assert.Equal(HttpStatusCode.NoContent, clearTitle.StatusCode);
+
+        var clearedDetail = await SendAsync(HttpMethod.Get, $"/saves/{saveId}", userA.Token);
+        clearedDetail.EnsureSuccessStatusCode();
+        using (var json = JsonDocument.Parse(await clearedDetail.Content.ReadAsStringAsync()))
+        {
+            var summary = json.RootElement.GetProperty("summary");
+            Assert.Equal(JsonValueKind.Null, summary.GetProperty("title").ValueKind);
+            Assert.Equal("Violet", summary.GetProperty("displayTitle").GetString());
         }
 
         var downloadA = await SendAsync(HttpMethod.Get, $"/saves/{saveId}/download", userA.Token);
@@ -164,6 +231,10 @@ public sealed class SaveFileTests : IClassFixture<HouseholdApiFactory>
         Assert.Equal("imported", uploadResult.GetProperty("status").GetString());
         var saveId = uploadResult.GetProperty("saveFileId").GetInt32();
 
+        var downloadResponse = await SendAsync(HttpMethod.Get, $"/saves/{saveId}/download", user.Token);
+        downloadResponse.EnsureSuccessStatusCode();
+        Assert.Equal(saveBytes, await downloadResponse.Content.ReadAsByteArrayAsync());
+
         var detailResponse = await SendAsync(HttpMethod.Get, $"/saves/{saveId}", user.Token);
         detailResponse.EnsureSuccessStatusCode();
         using var detailJson = JsonDocument.Parse(await detailResponse.Content.ReadAsStringAsync());
@@ -191,6 +262,96 @@ public sealed class SaveFileTests : IClassFixture<HouseholdApiFactory>
         repeatResponse.EnsureSuccessStatusCode();
         using var repeatJson = JsonDocument.Parse(await repeatResponse.Content.ReadAsStringAsync());
         Assert.Equal("duplicate", Assert.Single(repeatJson.RootElement.EnumerateArray()).GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task Detail_HandlesLargePokedexAndPreviewCollectionsWithoutCartesianMaterialization()
+    {
+        var user = await RegisterAsync($"save-large-{Guid.NewGuid():N}");
+        int saveId;
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var saveKey = Guid.NewGuid().ToString("N");
+            var save = new SaveFileEntity
+            {
+                UserId = user.UserId,
+                Sha256 = saveKey,
+                FileName = "pokemon-black.dsv",
+                OriginalFileName = "pokemon-black.dsv",
+                Format = "dsv",
+                Size = 1,
+                StoredPath = "not-used/pokemon-black.dsv",
+                RawBlob = [0x42],
+                Generation = 5,
+                OriginGame = (int)GameVersion.B,
+                GameName = "Black",
+                SaveType = "5",
+                ChecksumsValid = true,
+                Trainer = new SaveTrainerEntity
+                {
+                    TrainerName = "Hilbert",
+                    TrainerId = 12345,
+                    SecretId = 54321,
+                    Gender = 0,
+                    Language = "ENG",
+                    DexSeen = 1025,
+                    DexCaught = 900
+                },
+                PokedexEntries = Enumerable.Range(1, 1025)
+                    .Select(speciesId => new SavePokedexEntryEntity
+                    {
+                        SpeciesId = speciesId,
+                        SpeciesName = $"Species {speciesId}",
+                        Seen = true,
+                        Caught = speciesId <= 900
+                    })
+                    .ToList(),
+                PokemonPreviews = Enumerable.Range(0, 138)
+                    .Select(index =>
+                    {
+                        var isParty = index < 6;
+                        var boxSlot = index - 6;
+                        return new SavePokemonPreviewEntity
+                        {
+                            Location = isParty ? SavePokemonLocation.Party : SavePokemonLocation.Box,
+                            BoxIndex = isParty ? null : boxSlot / 30,
+                            SlotIndex = isParty ? index : boxSlot % 30,
+                            SpeciesId = index + 1,
+                            SpeciesName = $"Species {index + 1}",
+                            Level = 50,
+                            NatureName = "Hardy",
+                            AbilityName = "None",
+                            HeldItemName = "None",
+                            MovesJson = "[]",
+                            PokemonHash = $"party-{saveKey}-{index}",
+                            PokemonStoredHash = $"stored-{saveKey}-{index}"
+                        };
+                    })
+                    .ToList()
+            };
+            db.SaveFiles.Add(save);
+            await db.SaveChangesAsync();
+            saveId = save.Id;
+        }
+
+        var response = await SendAsync(HttpMethod.Get, $"/saves/{saveId}", user.Token);
+        response.EnsureSuccessStatusCode();
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var summary = json.RootElement.GetProperty("summary");
+        var pokedex = json.RootElement.GetProperty("pokedex");
+        var pokemon = json.RootElement.GetProperty("pokemon");
+
+        Assert.Equal(6, summary.GetProperty("partyCount").GetInt32());
+        Assert.Equal(132, summary.GetProperty("storedPokemonCount").GetInt32());
+        Assert.Equal(8, summary.GetProperty("badgeTotal").GetInt32());
+        Assert.Equal(1025, pokedex.GetArrayLength());
+        Assert.Equal(1025, pokedex[1024].GetProperty("speciesId").GetInt32());
+        Assert.Equal(138, pokemon.GetArrayLength());
+        Assert.Equal("party", pokemon[0].GetProperty("location").GetString());
+        Assert.Equal("box", pokemon[137].GetProperty("location").GetString());
+        Assert.Equal(138, pokemon[137].GetProperty("speciesId").GetInt32());
     }
 
     private async Task<LoginResponse> RegisterAsync(string username)

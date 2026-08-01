@@ -38,7 +38,7 @@ public sealed class SaveFileService(
         parsed.SaveFile.StoredPath = storage.SaveGameSave(
             parsed.SaveFile.Sha256,
             parsed.SaveFile.Format,
-            bytes,
+            parsed.SaveFile.RawBlob,
             userId,
             parsed.SaveFile.Generation,
             fileName);
@@ -73,11 +73,7 @@ public sealed class SaveFileService(
         int userId,
         CancellationToken cancellationToken)
     {
-        var saves = await db.SaveFiles
-            .AsNoTracking()
-            .Where(x => x.UserId == userId)
-            .Include(x => x.Trainer)
-            .Include(x => x.PokemonPreviews)
+        var saves = await QuerySaveRows(userId)
             .OrderByDescending(x => x.ImportedAt)
             .ToListAsync(cancellationToken);
 
@@ -89,47 +85,102 @@ public sealed class SaveFileService(
         int saveFileId,
         CancellationToken cancellationToken)
     {
-        var save = await db.SaveFiles
-            .AsNoTracking()
-            .Where(x => x.UserId == userId && x.Id == saveFileId)
-            .Include(x => x.Trainer)
-            .Include(x => x.PokedexEntries)
-            .Include(x => x.PokemonPreviews)
-            .SingleOrDefaultAsync(cancellationToken);
+        var save = await QuerySaveRows(userId)
+            .SingleOrDefaultAsync(x => x.Id == saveFileId, cancellationToken);
         if (save is null)
             return null;
 
-        var existing = await FindExistingPokemonAsync(userId, save.PokemonPreviews, cancellationToken);
+        var pokedex = await db.SavePokedexEntries
+            .AsNoTracking()
+            .Where(x => x.SaveFileId == saveFileId && x.SaveFile.UserId == userId)
+            .OrderBy(x => x.SpeciesId)
+            .Select(x => new SavePokedexEntryDto(x.SpeciesId, x.SpeciesName, x.Seen, x.Caught))
+            .ToListAsync(cancellationToken);
+
+        var pokemonRows = await db.SavePokemonPreviews
+            .AsNoTracking()
+            .Where(x => x.SaveFileId == saveFileId && x.SaveFile.UserId == userId)
+            .OrderBy(x => x.Location)
+            .ThenBy(x => x.BoxIndex)
+            .ThenBy(x => x.SlotIndex)
+            .Select(x => new
+            {
+                x.Id,
+                x.Location,
+                x.BoxIndex,
+                x.SlotIndex,
+                x.SpeciesId,
+                x.SpeciesName,
+                x.Nickname,
+                x.Level,
+                x.IsShiny,
+                x.IsEgg,
+                x.Form,
+                x.Gender,
+                x.Nature,
+                x.NatureName,
+                x.AbilityName,
+                x.HeldItemName,
+                x.MovesJson,
+                x.PokemonHash,
+                x.PokemonStoredHash
+            })
+            .ToListAsync(cancellationToken);
+        var existing = await FindExistingPokemonAsync(
+            userId,
+            pokemonRows.Select(x => (x.Id, x.PokemonHash, x.PokemonStoredHash)),
+            cancellationToken);
+
         return new SaveFileDetailDto(
             ToSummary(save),
-            ToTrainer(save.Trainer),
-            save.PokedexEntries
-                .OrderBy(x => x.SpeciesId)
-                .Select(x => new SavePokedexEntryDto(x.SpeciesId, x.SpeciesName, x.Seen, x.Caught))
-                .ToList(),
-            save.PokemonPreviews
-                .OrderBy(x => x.Location)
-                .ThenBy(x => x.BoxIndex)
-                .ThenBy(x => x.SlotIndex)
-                .Select(x => ToPreview(x, existing.GetValueOrDefault(x.Id)))
-                .ToList());
+            ToTrainer(save),
+            pokedex,
+            pokemonRows.Select(x =>
+            {
+                var existingPokemonId = existing.GetValueOrDefault(x.Id);
+                return new SavePokemonPreviewDto(
+                    x.Id,
+                    x.Location == SavePokemonLocation.Party ? "party" : "box",
+                    x.BoxIndex.HasValue ? x.BoxIndex.Value + 1 : null,
+                    x.SlotIndex + 1,
+                    x.SpeciesId,
+                    x.SpeciesName,
+                    x.Nickname,
+                    x.Level,
+                    x.IsShiny,
+                    x.IsEgg,
+                    x.Form,
+                    x.Gender,
+                    x.Nature,
+                    x.NatureName,
+                    x.AbilityName,
+                    x.HeldItemName,
+                    DeserializeMoves(x.MovesJson),
+                    x.PokemonHash,
+                    existingPokemonId > 0 ? existingPokemonId : null);
+            }).ToList());
     }
 
-    public async Task<bool> UpdateNotesAsync(
+    public async Task<bool> UpdateMetadataAsync(
         int userId,
         int saveFileId,
+        string? title,
         string? notes,
         CancellationToken cancellationToken)
     {
-        var save = await db.SaveFiles.SingleOrDefaultAsync(
-            x => x.UserId == userId && x.Id == saveFileId,
-            cancellationToken);
-        if (save is null)
-            return false;
+        var normalizedTitle = NormalizeOptionalText(title);
+        var normalizedNotes = NormalizeOptionalText(notes);
+        if (normalizedTitle?.Length > 120)
+            throw new ArgumentOutOfRangeException(nameof(title), "Save titles cannot exceed 120 characters.");
+        if (normalizedNotes?.Length > 4000)
+            throw new ArgumentOutOfRangeException(nameof(notes), "Save notes cannot exceed 4000 characters.");
 
-        save.Notes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim();
-        await db.SaveChangesAsync(cancellationToken);
-        return true;
+        var updated = await db.SaveFiles
+            .Where(x => x.UserId == userId && x.Id == saveFileId)
+            .ExecuteUpdateAsync(update => update
+                .SetProperty(x => x.Title, normalizedTitle)
+                .SetProperty(x => x.Notes, normalizedNotes), cancellationToken);
+        return updated == 1;
     }
 
     public async Task<IReadOnlyList<SavePokemonImportResultDto>?> ImportPokemonAsync(
@@ -139,17 +190,21 @@ public sealed class SaveFileService(
         CancellationToken cancellationToken)
     {
         var save = await db.SaveFiles
+            .AsNoTracking()
             .Where(x => x.UserId == userId && x.Id == saveFileId)
-            .Include(x => x.PokemonPreviews)
+            .Select(x => new { x.OriginalFileName, x.StoredPath, x.RawBlob })
             .SingleOrDefaultAsync(cancellationToken);
         if (save is null)
             return null;
 
-        var requestedIds = previewIds.Distinct().ToHashSet();
-        var previews = save.PokemonPreviews
-            .Where(x => requestedIds.Contains(x.Id))
+        var requestedIds = previewIds.Distinct().ToList();
+        var previews = await db.SavePokemonPreviews
+            .AsNoTracking()
+            .Where(x => x.SaveFileId == saveFileId &&
+                x.SaveFile.UserId == userId &&
+                requestedIds.Contains(x.Id))
             .OrderBy(x => x.Id)
-            .ToList();
+            .ToListAsync(cancellationToken);
         var results = requestedIds
             .Except(previews.Select(x => x.Id))
             .Select(id => new SavePokemonImportResultDto(
@@ -158,7 +213,7 @@ public sealed class SaveFileService(
                 Message: "This Pokémon slot does not belong to the save."))
             .ToList();
 
-        if (!TryReadSaveBytes(userId, save, out var saveBytes))
+        if (!TryReadSaveBytes(userId, save.RawBlob, save.StoredPath, out var saveBytes))
         {
             results.AddRange(previews.Select(x =>
                 new SavePokemonImportResultDto(x.Id, "error", Message: "The original save data is unavailable.")));
@@ -173,7 +228,10 @@ public sealed class SaveFileService(
             return results;
         }
 
-        var existing = await FindExistingPokemonAsync(userId, previews, cancellationToken);
+        var existing = await FindExistingPokemonAsync(
+            userId,
+            previews.Select(x => (x.Id, x.PokemonHash, x.PokemonStoredHash)),
+            cancellationToken);
         foreach (var preview in previews)
         {
             if (existing.TryGetValue(preview.Id, out var existingPokemonId))
@@ -271,10 +329,12 @@ public sealed class SaveFileService(
         int saveFileId,
         CancellationToken cancellationToken)
     {
-        var save = await db.SaveFiles.AsNoTracking().SingleOrDefaultAsync(
-            x => x.UserId == userId && x.Id == saveFileId,
-            cancellationToken);
-        if (save is null || !TryReadSaveBytes(userId, save, out var bytes))
+        var save = await db.SaveFiles
+            .AsNoTracking()
+            .Where(x => x.UserId == userId && x.Id == saveFileId)
+            .Select(x => new { x.OriginalFileName, x.StoredPath, x.RawBlob })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (save is null || !TryReadSaveBytes(userId, save.RawBlob, save.StoredPath, out var bytes))
             return null;
         return (bytes, save.OriginalFileName);
     }
@@ -284,31 +344,37 @@ public sealed class SaveFileService(
         int saveFileId,
         CancellationToken cancellationToken)
     {
-        var save = await db.SaveFiles.SingleOrDefaultAsync(
-            x => x.UserId == userId && x.Id == saveFileId,
-            cancellationToken);
+        var save = await db.SaveFiles
+            .AsNoTracking()
+            .Where(x => x.UserId == userId && x.Id == saveFileId)
+            .Select(x => new { x.StoredPath })
+            .SingleOrDefaultAsync(cancellationToken);
         if (save is null)
             return false;
 
-        db.SaveFiles.Remove(save);
-        await db.SaveChangesAsync(cancellationToken);
+        var deleted = await db.SaveFiles
+            .Where(x => x.UserId == userId && x.Id == saveFileId)
+            .ExecuteDeleteAsync(cancellationToken);
+        if (deleted != 1)
+            return false;
+
         storage.DeleteUserFile(userId, save.StoredPath);
         return true;
     }
 
-    private bool TryReadSaveBytes(int userId, SaveFileEntity save, out byte[] bytes)
+    private bool TryReadSaveBytes(int userId, byte[] rawBlob, string storedPath, out byte[] bytes)
     {
-        if (save.RawBlob.Length > 0)
+        if (rawBlob.Length > 0)
         {
-            bytes = save.RawBlob;
+            bytes = rawBlob;
             return true;
         }
-        return storage.TryReadUserFile(userId, save.StoredPath, out bytes);
+        return storage.TryReadUserFile(userId, storedPath, out bytes);
     }
 
     private async Task<Dictionary<int, int>> FindExistingPokemonAsync(
         int userId,
-        IEnumerable<SavePokemonPreviewEntity> previews,
+        IEnumerable<(int Id, string PokemonHash, string PokemonStoredHash)> previews,
         CancellationToken cancellationToken)
     {
         var previewList = previews.ToList();
@@ -354,9 +420,45 @@ public sealed class SaveFileService(
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    private static SaveFileSummaryDto ToSummary(SaveFileEntity save)
+    private IQueryable<SaveFileRow> QuerySaveRows(int userId)
     {
-        var trainer = save.Trainer;
+        return db.SaveFiles
+            .AsNoTracking()
+            .Where(x => x.UserId == userId)
+            .Select(x => new SaveFileRow
+            {
+                Id = x.Id,
+                Title = x.Title,
+                OriginalFileName = x.OriginalFileName,
+                Format = x.Format,
+                Size = x.Size,
+                Generation = x.Generation,
+                OriginGame = x.OriginGame,
+                GameName = x.GameName,
+                SaveType = x.SaveType,
+                ImportedAt = x.ImportedAt,
+                Notes = x.Notes,
+                ChecksumsValid = x.ChecksumsValid,
+                TrainerName = x.Trainer.TrainerName,
+                TrainerId = x.Trainer.TrainerId,
+                SecretId = x.Trainer.SecretId,
+                TrainerGender = x.Trainer.Gender,
+                Language = x.Trainer.Language,
+                Money = x.Trainer.Money,
+                PlayTimeHours = x.Trainer.PlayTimeHours,
+                PlayTimeMinutes = x.Trainer.PlayTimeMinutes,
+                PlayTimeSeconds = x.Trainer.PlayTimeSeconds,
+                BadgeCount = x.Trainer.BadgeCount,
+                DexSeen = x.Trainer.DexSeen,
+                DexCaught = x.Trainer.DexCaught,
+                PartyCount = x.PokemonPreviews.Count(p => p.Location == SavePokemonLocation.Party),
+                StoredPokemonCount = x.PokemonPreviews.Count(p => p.Location == SavePokemonLocation.Box)
+            });
+    }
+
+    private static SaveFileSummaryDto ToSummary(SaveFileRow save)
+    {
+        var title = NormalizeOptionalText(save.Title);
         return new SaveFileSummaryDto(
             save.Id,
             save.OriginalFileName,
@@ -368,53 +470,36 @@ public sealed class SaveFileService(
             save.SaveType,
             save.ImportedAt,
             save.Notes,
-            trainer.TrainerName,
-            trainer.TrainerId,
-            trainer.SecretId,
-            FormatPlayTime(trainer),
-            trainer.BadgeCount,
-            trainer.DexSeen,
-            trainer.DexCaught,
-            save.PokemonPreviews.Count(x => x.Location == SavePokemonLocation.Party),
-            save.PokemonPreviews.Count(x => x.Location == SavePokemonLocation.Box),
-            save.ChecksumsValid);
+            save.TrainerName,
+            save.TrainerId,
+            save.SecretId,
+            FormatPlayTime(save.PlayTimeHours, save.PlayTimeMinutes, save.PlayTimeSeconds),
+            save.BadgeCount,
+            save.DexSeen,
+            save.DexCaught,
+            save.PartyCount,
+            save.StoredPokemonCount,
+            save.ChecksumsValid,
+            title,
+            title ?? save.GameName,
+            save.TrainerGender,
+            GetBadgeTotal(save));
     }
 
-    private static SaveTrainerDto ToTrainer(SaveTrainerEntity trainer) => new(
-        trainer.TrainerName,
-        trainer.TrainerId,
-        trainer.SecretId,
-        trainer.Gender,
-        trainer.Language,
-        trainer.Money,
-        trainer.PlayTimeHours,
-        trainer.PlayTimeMinutes,
-        trainer.PlayTimeSeconds,
-        FormatPlayTime(trainer),
-        trainer.BadgeCount,
-        trainer.DexSeen,
-        trainer.DexCaught);
-
-    private static SavePokemonPreviewDto ToPreview(SavePokemonPreviewEntity preview, int existingPokemonId) => new(
-        preview.Id,
-        preview.Location == SavePokemonLocation.Party ? "party" : "box",
-        preview.BoxIndex.HasValue ? preview.BoxIndex.Value + 1 : null,
-        preview.SlotIndex + 1,
-        preview.SpeciesId,
-        preview.SpeciesName,
-        preview.Nickname,
-        preview.Level,
-        preview.IsShiny,
-        preview.IsEgg,
-        preview.Form,
-        preview.Gender,
-        preview.Nature,
-        preview.NatureName,
-        preview.AbilityName,
-        preview.HeldItemName,
-        DeserializeMoves(preview.MovesJson),
-        preview.PokemonHash,
-        existingPokemonId > 0 ? existingPokemonId : null);
+    private static SaveTrainerDto ToTrainer(SaveFileRow save) => new(
+        save.TrainerName,
+        save.TrainerId,
+        save.SecretId,
+        save.TrainerGender,
+        save.Language,
+        save.Money,
+        save.PlayTimeHours,
+        save.PlayTimeMinutes,
+        save.PlayTimeSeconds,
+        FormatPlayTime(save.PlayTimeHours, save.PlayTimeMinutes, save.PlayTimeSeconds),
+        save.BadgeCount,
+        save.DexSeen,
+        save.DexCaught);
 
     private static IReadOnlyList<string> DeserializeMoves(string value)
     {
@@ -428,6 +513,68 @@ public sealed class SaveFileService(
         }
     }
 
-    private static string FormatPlayTime(SaveTrainerEntity trainer) =>
-        $"{trainer.PlayTimeHours}:{trainer.PlayTimeMinutes:00}:{trainer.PlayTimeSeconds:00}";
+    private static int? GetBadgeTotal(SaveFileRow save)
+    {
+        if (save.SaveType.Contains("HGSS", StringComparison.OrdinalIgnoreCase))
+            return 16;
+        if (save.Generation == 9 &&
+            (save.SaveType.Contains("SV", StringComparison.OrdinalIgnoreCase) ||
+             save.GameName.Equals("Scarlet", StringComparison.OrdinalIgnoreCase) ||
+             save.GameName.Equals("Violet", StringComparison.OrdinalIgnoreCase)))
+        {
+            return 18;
+        }
+        if (save.Generation is >= 1 and <= 6)
+            return 8;
+        if (save.Generation == 7 &&
+            (save.SaveType.Equals("7b", StringComparison.OrdinalIgnoreCase) ||
+             save.GameName.StartsWith("Let's Go", StringComparison.OrdinalIgnoreCase)))
+        {
+            return 8;
+        }
+        if (save.Generation == 8 &&
+            (save.SaveType.Contains("SWSH", StringComparison.OrdinalIgnoreCase) ||
+             save.SaveType.Equals("8BS", StringComparison.OrdinalIgnoreCase) ||
+             save.GameName is "Sword" or "Shield" or "Brilliant Diamond" or "Shining Pearl"))
+        {
+            return 8;
+        }
+        return null;
+    }
+
+    private static string? NormalizeOptionalText(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string FormatPlayTime(int hours, int minutes, int seconds) =>
+        $"{hours}:{minutes:00}:{seconds:00}";
+
+    private sealed class SaveFileRow
+    {
+        public int Id { get; init; }
+        public string? Title { get; init; }
+        public string OriginalFileName { get; init; } = string.Empty;
+        public string Format { get; init; } = string.Empty;
+        public long Size { get; init; }
+        public int Generation { get; init; }
+        public int OriginGame { get; init; }
+        public string GameName { get; init; } = string.Empty;
+        public string SaveType { get; init; } = string.Empty;
+        public DateTime ImportedAt { get; init; }
+        public string? Notes { get; init; }
+        public bool ChecksumsValid { get; init; }
+        public string TrainerName { get; init; } = string.Empty;
+        public uint TrainerId { get; init; }
+        public uint SecretId { get; init; }
+        public int TrainerGender { get; init; }
+        public string Language { get; init; } = string.Empty;
+        public uint Money { get; init; }
+        public int PlayTimeHours { get; init; }
+        public int PlayTimeMinutes { get; init; }
+        public int PlayTimeSeconds { get; init; }
+        public int? BadgeCount { get; init; }
+        public int DexSeen { get; init; }
+        public int DexCaught { get; init; }
+        public int PartyCount { get; init; }
+        public int StoredPokemonCount { get; init; }
+    }
 }

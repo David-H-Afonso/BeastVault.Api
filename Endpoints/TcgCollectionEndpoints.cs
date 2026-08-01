@@ -2,6 +2,8 @@ using BeastVault.Api.Application.Interfaces;
 using BeastVault.Api.Application.Services;
 using BeastVault.Api.Contracts;
 using BeastVault.Api.Helpers;
+using BeastVault.Api.Infrastructure.Services;
+using Microsoft.AspNetCore.Mvc;
 
 namespace BeastVault.Api.Endpoints;
 
@@ -9,6 +11,36 @@ public static class TcgCollectionEndpoints
 {
     public static IEndpointRouteBuilder MapTcgCollectionEndpoints(this IEndpointRouteBuilder app)
     {
+        app.MapGet("/tcg/assets/cards/{id:int}/{size}", async (
+                int id,
+                string size,
+                TcgAssetCacheService assets,
+                CancellationToken cancellationToken) =>
+            {
+                var asset = await assets.GetCardAsync(id, size, cancellationToken);
+                return asset is null ? Results.NotFound() : Results.File(asset.Path, asset.ContentType);
+            })
+            .WithName("GetTcgCardAsset")
+            .WithTags("TCG assets")
+            .AllowAnonymous()
+            .RequireRateLimiting("tcg-provider")
+            .Produces(404);
+
+        app.MapGet("/tcg/assets/sets/{id:int}/{kind}", async (
+                int id,
+                string kind,
+                TcgAssetCacheService assets,
+                CancellationToken cancellationToken) =>
+            {
+                var asset = await assets.GetSetAsync(id, kind, cancellationToken);
+                return asset is null ? Results.NotFound() : Results.File(asset.Path, asset.ContentType);
+            })
+            .WithName("GetTcgSetAsset")
+            .WithTags("TCG assets")
+            .AllowAnonymous()
+            .RequireRateLimiting("tcg-provider")
+            .Produces(404);
+
         var group = app.MapGroup("/tcg")
             .WithTags("TCG collection")
             .RequireAuthorization("NormalUserOnly");
@@ -87,6 +119,10 @@ public static class TcgCollectionEndpoints
                 {
                     return Results.Problem("Card search is temporarily unavailable.", statusCode: 503);
                 }
+                catch (ArgumentException exception)
+                {
+                    return Results.BadRequest(exception.Message);
+                }
             })
             .WithName("SearchTcgCards")
             .RequireRateLimiting("tcg-provider")
@@ -117,13 +153,35 @@ public static class TcgCollectionEndpoints
             {
                 var userId = context.GetUserId();
                 if (userId is null) return Results.Unauthorized();
-                var result = await service.GetCardAsync(userId.Value, id, true, cancellationToken);
+                var result = await service.RefreshCardAsync(userId.Value, id, cancellationToken);
                 return result is null ? Results.NotFound() : Results.Ok(result);
             })
             .WithName("RefreshTcgCard")
             .RequireRateLimiting("tcg-refresh")
-            .Produces<TcgCardDto>()
+            .Produces<TcgCardRefreshResultDto>()
             .Produces(404);
+
+        group.MapPost("/cards/refresh", async (
+                TcgBatchRefreshRequest request,
+                TcgCollectionService service,
+                HttpContext context,
+                CancellationToken cancellationToken) =>
+            {
+                var userId = context.GetUserId();
+                if (userId is null) return Results.Unauthorized();
+                try
+                {
+                    return Results.Ok(await service.RefreshCardsAsync(userId.Value, request, cancellationToken));
+                }
+                catch (ArgumentException exception)
+                {
+                    return Results.BadRequest(exception.Message);
+                }
+            })
+            .WithName("RefreshTcgCards")
+            .RequireRateLimiting("tcg-refresh")
+            .Produces<TcgBatchRefreshResultDto>()
+            .Produces(400);
 
         group.MapGet("/species/{speciesId:int}/cards", async (
                 int speciesId,
@@ -199,7 +257,6 @@ public static class TcgCollectionEndpoints
                 catch (ArgumentException exception) { return Results.BadRequest(exception.Message); }
             })
             .WithName("AddTcgCollectionEntry")
-            .RequireRateLimiting("tcg-provider")
             .Produces<UserCardDto>()
             .Produces(400)
             .Produces(404);
@@ -240,6 +297,43 @@ public static class TcgCollectionEndpoints
             .WithName("DeleteTcgCollectionEntry")
             .Produces(204)
             .Produces(404);
+
+        group.MapDelete("/collection/cards/{cardId:int}", async (
+                int cardId,
+                TcgCollectionService service,
+                HttpContext context,
+                CancellationToken cancellationToken) =>
+            {
+                var userId = context.GetUserId();
+                if (userId is null) return Results.Unauthorized();
+                return await service.DeleteCardAsync(userId.Value, cardId, cancellationToken) > 0
+                    ? Results.NoContent()
+                    : Results.NotFound();
+            })
+            .WithName("DeleteTcgCollectionCard")
+            .Produces(204)
+            .Produces(404);
+
+        group.MapDelete("/collection/cards", async (
+                [FromBody] DeleteTcgCardsRequest request,
+                TcgCollectionService service,
+                HttpContext context,
+                CancellationToken cancellationToken) =>
+            {
+                var userId = context.GetUserId();
+                if (userId is null) return Results.Unauthorized();
+                try
+                {
+                    return Results.Ok(await service.DeleteCardsAsync(userId.Value, request, cancellationToken));
+                }
+                catch (ArgumentException exception)
+                {
+                    return Results.BadRequest(exception.Message);
+                }
+            })
+            .WithName("DeleteTcgCollectionCards")
+            .Produces<DeleteTcgCardsResultDto>()
+            .Produces(400);
 
         var preferences = app.MapGroup("/auth/preferences")
             .WithTags("Auth")

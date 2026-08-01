@@ -35,6 +35,45 @@ public sealed class TcgDexProvider(IHttpClientFactory httpClientFactory) : ITcgD
         }
     }
 
+    public async Task<TcgProviderSet?> GetSetByOfficialCodeAsync(
+        string officialCode,
+        string language,
+        CancellationToken cancellationToken)
+    {
+        using var document = await GetJsonAsync(
+            $"v2/{NormalizeLanguage(language)}/sets?abbreviation.official={Uri.EscapeDataString(officialCode.Trim())}",
+            cancellationToken);
+        if (document.RootElement.ValueKind != JsonValueKind.Array) return null;
+        foreach (var result in document.RootElement.EnumerateArray())
+        {
+            var setId = GetString(result, "id");
+            if (string.IsNullOrWhiteSpace(setId)) continue;
+            var set = await GetSetAsync(setId, language, cancellationToken);
+            if (set is not null && string.Equals(set.OfficialCode, officialCode.Trim(), StringComparison.OrdinalIgnoreCase))
+                return set;
+        }
+        return null;
+    }
+
+    public async Task<TcgProviderCard?> GetSetCardAsync(
+        string setId,
+        string localId,
+        string language,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var document = await GetJsonAsync(
+                $"v2/{NormalizeLanguage(language)}/sets/{Uri.EscapeDataString(setId)}/{Uri.EscapeDataString(localId)}",
+                cancellationToken);
+            return ParseCard(document.RootElement, isComplete: true);
+        }
+        catch (HttpRequestException exception) when (exception.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+    }
+
     public async Task<TcgProviderCard?> GetCardAsync(
         string cardId,
         string language,
@@ -45,7 +84,7 @@ public sealed class TcgDexProvider(IHttpClientFactory httpClientFactory) : ITcgD
             using var document = await GetJsonAsync(
                 $"v2/{NormalizeLanguage(language)}/cards/{Uri.EscapeDataString(cardId)}",
                 cancellationToken);
-            return ParseCard(document.RootElement);
+            return ParseCard(document.RootElement, isComplete: true);
         }
         catch (HttpRequestException exception) when (exception.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
@@ -67,11 +106,11 @@ public sealed class TcgDexProvider(IHttpClientFactory httpClientFactory) : ITcgD
         if (!string.IsNullOrWhiteSpace(query))
             parameters.Add($"name={Uri.EscapeDataString(query.Trim())}");
         if (!string.IsNullOrWhiteSpace(setId))
-            parameters.Add($"set.id=eq:{Uri.EscapeDataString(setId.Trim())}");
+            parameters.Add($"set.id={Uri.EscapeDataString(setId.Trim())}");
         if (!string.IsNullOrWhiteSpace(number))
-            parameters.Add($"localId=eq:{Uri.EscapeDataString(number.Trim())}");
+            parameters.Add($"localId={Uri.EscapeDataString(number.Trim())}");
         if (speciesId.HasValue)
-            parameters.Add($"dexId=eq:{speciesId.Value}");
+            parameters.Add($"dexId={speciesId.Value}");
         parameters.Add($"pagination:page={Math.Clamp(page, 1, 10_000)}");
         parameters.Add($"pagination:itemsPerPage={Math.Clamp(pageSize, 1, 100)}");
 
@@ -79,7 +118,7 @@ public sealed class TcgDexProvider(IHttpClientFactory httpClientFactory) : ITcgD
             $"v2/{NormalizeLanguage(language)}/cards?{string.Join('&', parameters)}",
             cancellationToken);
         if (document.RootElement.ValueKind != JsonValueKind.Array) return [];
-        return document.RootElement.EnumerateArray().Select(ParseCard).ToList();
+        return document.RootElement.EnumerateArray().Select(value => ParseCard(value, isComplete: false)).ToList();
     }
 
     private async Task<JsonDocument> GetJsonAsync(string path, CancellationToken cancellationToken)
@@ -94,14 +133,18 @@ public sealed class TcgDexProvider(IHttpClientFactory httpClientFactory) : ITcgD
     {
         var cardCount = value.TryGetProperty("cardCount", out var counts) ? counts : default;
         var cards = value.TryGetProperty("cards", out var cardValues) && cardValues.ValueKind == JsonValueKind.Array
-            ? cardValues.EnumerateArray().Select(ParseCard).ToList()
+            ? cardValues.EnumerateArray().Select(value => ParseCard(value, isComplete: false)).ToList()
             : [];
         var id = GetString(value, "id") ?? string.Empty;
         var name = GetString(value, "name") ?? id;
+        var series = value.TryGetProperty("serie", out var seriesValue) ? seriesValue : default;
+        var abbreviation = value.TryGetProperty("abbreviation", out var abbreviationValue) ? abbreviationValue : default;
         return new TcgProviderSet(
             id,
             name,
-            value.TryGetProperty("serie", out var series) ? GetString(series, "name") : null,
+            GetString(series, "name"),
+            GetString(series, "id"),
+            GetString(abbreviation, "official"),
             GetInt(cardCount, "official"),
             GetInt(cardCount, "total"),
             ParseDate(GetString(value, "releaseDate")),
@@ -110,7 +153,7 @@ public sealed class TcgDexProvider(IHttpClientFactory httpClientFactory) : ITcgD
             cards.Select(card => card with { SetId = id, SetName = name }).ToList());
     }
 
-    private static TcgProviderCard ParseCard(JsonElement value)
+    private static TcgProviderCard ParseCard(JsonElement value, bool isComplete)
     {
         var id = GetString(value, "id") ?? string.Empty;
         var set = value.TryGetProperty("set", out var setValue) ? setValue : default;
@@ -145,7 +188,8 @@ public sealed class TcgDexProvider(IHttpClientFactory httpClientFactory) : ITcgD
             usdVariants,
             Latest(cardmarketUpdated, tcgplayerUpdated),
             cardmarketUrl,
-            tcgplayerUrl);
+            tcgplayerUrl,
+            isComplete);
     }
 
     private static List<string> ParseVariants(JsonElement value)
@@ -155,6 +199,7 @@ public sealed class TcgDexProvider(IHttpClientFactory httpClientFactory) : ITcgD
         {
             foreach (var variant in detailed.EnumerateArray())
             {
+                if (variant.ValueKind != JsonValueKind.Object) continue;
                 var name = BuildDetailedVariantName(variant);
                 if (name is not null) result.Add(name);
             }
@@ -218,6 +263,7 @@ public sealed class TcgDexProvider(IHttpClientFactory httpClientFactory) : ITcgD
 
         foreach (var variant in variants.EnumerateArray())
         {
+            if (variant.ValueKind != JsonValueKind.Object) continue;
             var name = BuildDetailedVariantName(variant);
             if (name is null || !variant.TryGetProperty("pricing", out var pricing) || pricing.ValueKind != JsonValueKind.Object)
                 continue;
@@ -300,7 +346,14 @@ public sealed class TcgDexProvider(IHttpClientFactory httpClientFactory) : ITcgD
         return safe is null ? null : $"{safe.TrimEnd('/')}/{suffix}";
     }
 
-    private static string? BuildAssetUrl(string? value, string _) => AllowHttpsUrl(value, "assets.tcgdex.net");
+    private static string? BuildAssetUrl(string? value, string _)
+    {
+        var safe = AllowHttpsUrl(value, "assets.tcgdex.net");
+        if (safe is null || !Uri.TryCreate(safe, UriKind.Absolute, out var uri)) return null;
+        if (Path.HasExtension(uri.AbsolutePath)) return uri.ToString();
+        var builder = new UriBuilder(uri) { Path = $"{uri.AbsolutePath.TrimEnd('/')}.webp" };
+        return builder.Uri.ToString();
+    }
 
     private static string? AllowHttpsUrl(string? value, params string[] hosts)
     {
@@ -308,7 +361,12 @@ public sealed class TcgDexProvider(IHttpClientFactory httpClientFactory) : ITcgD
         return hosts.Any(host => uri.Host.Equals(host, StringComparison.OrdinalIgnoreCase) ||
             uri.Host.EndsWith($".{host}", StringComparison.OrdinalIgnoreCase)) ? uri.ToString() : null;
     }
-    private static DateTime? Latest(DateTime? first, DateTime? second) => first > second ? first : second;
+    private static DateTime? Latest(DateTime? first, DateTime? second)
+    {
+        if (!first.HasValue) return second;
+        if (!second.HasValue) return first;
+        return first.Value >= second.Value ? first : second;
+    }
 
     private static string? GetString(JsonElement value, string property) =>
         value.ValueKind == JsonValueKind.Object && value.TryGetProperty(property, out var item) && item.ValueKind == JsonValueKind.String
@@ -316,20 +374,23 @@ public sealed class TcgDexProvider(IHttpClientFactory httpClientFactory) : ITcgD
             : null;
 
     private static int GetInt(JsonElement value, string property) =>
-        value.ValueKind == JsonValueKind.Object && value.TryGetProperty(property, out var item) && item.TryGetInt32(out var result)
+        value.ValueKind == JsonValueKind.Object && value.TryGetProperty(property, out var item) &&
+            item.ValueKind == JsonValueKind.Number && item.TryGetInt32(out var result)
             ? result
             : 0;
 
     private static List<int> GetIntArray(JsonElement value, string property) =>
         value.ValueKind == JsonValueKind.Object && value.TryGetProperty(property, out var item) && item.ValueKind == JsonValueKind.Array
-            ? item.EnumerateArray().Where(x => x.TryGetInt32(out _)).Select(x => x.GetInt32()).Distinct().ToList()
+            ? item.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.Number && x.TryGetInt32(out _))
+                .Select(x => x.GetInt32()).Distinct().ToList()
             : [];
 
     private static decimal? FirstPositive(JsonElement value, params string[] properties)
     {
         foreach (var property in properties)
         {
-            if (value.TryGetProperty(property, out var item) && item.TryGetDecimal(out var result) && result > 0)
+            if (value.ValueKind == JsonValueKind.Object && value.TryGetProperty(property, out var item) &&
+                item.ValueKind == JsonValueKind.Number && item.TryGetDecimal(out var result) && result > 0)
                 return result;
         }
         return null;

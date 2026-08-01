@@ -15,13 +15,16 @@ public sealed class PkhexSaveParser
 
     public Task<ParseResult?> ParseAsync(byte[] bytes, string fileName)
     {
+        var originalBytes = bytes.ToArray();
+        var sha256 = FileStorageService.ComputeSha256(originalBytes);
+        var parseBytes = originalBytes.ToArray();
+
         return Task.Run(() =>
         {
-            var save = Load(bytes, fileName);
+            var save = LoadCore(parseBytes, fileName);
             if (save is null)
                 return null;
 
-            var sha256 = FileStorageService.ComputeSha256(bytes);
             var format = GetFormat(fileName, save);
             var trainer = new SaveTrainerEntity
             {
@@ -45,9 +48,9 @@ public sealed class PkhexSaveParser
                 FileName = fileName,
                 OriginalFileName = fileName,
                 Format = format,
-                Size = bytes.LongLength,
+                Size = originalBytes.LongLength,
                 StoredPath = string.Empty,
-                RawBlob = bytes,
+                RawBlob = originalBytes,
                 Generation = save.Generation,
                 OriginGame = (int)save.Version,
                 GameName = PkHexStringService.GetVersionName((int)save.Version),
@@ -66,6 +69,11 @@ public sealed class PkhexSaveParser
     }
 
     public SaveFile? Load(byte[] bytes, string fileName)
+    {
+        return LoadCore(bytes.ToArray(), fileName);
+    }
+
+    private static SaveFile? LoadCore(byte[] bytes, string fileName)
     {
         try
         {

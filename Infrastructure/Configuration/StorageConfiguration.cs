@@ -19,6 +19,7 @@ namespace BeastVault.Api.Infrastructure.Configuration
         public string BackupDirectory { get; private set; } = string.Empty;
         public string TagImagesDirectory { get; private set; } = string.Empty;
         public string SaveFilesDirectory { get; private set; } = string.Empty;
+        public string TcgAssetsDirectory { get; private set; } = string.Empty;
         public string DataProtectionKeysDirectory { get; private set; } = string.Empty;
 
         // Información de entorno
@@ -179,6 +180,7 @@ namespace BeastVault.Api.Infrastructure.Configuration
             // persistent storage volume (e.g. /app/pokemon in Docker).
             TagImagesDirectory = Path.Combine(PokemonFilesDirectory, "tag-images");
             SaveFilesDirectory = Path.Combine(PokemonFilesDirectory, "saves");
+            TcgAssetsDirectory = Path.Combine(PokemonFilesDirectory, "tcg-assets");
         }
 
         /// <summary>
@@ -216,6 +218,12 @@ namespace BeastVault.Api.Infrastructure.Configuration
                 Console.WriteLine($"Created save files directory: {SaveFilesDirectory}");
             }
 
+            if (!Directory.Exists(TcgAssetsDirectory))
+            {
+                Directory.CreateDirectory(TcgAssetsDirectory);
+                Console.WriteLine($"Created TCG assets directory: {TcgAssetsDirectory}");
+            }
+
             if (!Directory.Exists(DataProtectionKeysDirectory))
             {
                 Directory.CreateDirectory(DataProtectionKeysDirectory);
@@ -235,6 +243,7 @@ namespace BeastVault.Api.Infrastructure.Configuration
             Console.WriteLine($"Backup Directory: {BackupDirectory}");
             Console.WriteLine($"Tag Images Directory: {TagImagesDirectory}");
             Console.WriteLine($"Save Files Directory: {SaveFilesDirectory}");
+            Console.WriteLine($"TCG Assets Directory: {TcgAssetsDirectory}");
             Console.WriteLine($"Data Protection Keys Directory: {DataProtectionKeysDirectory}");
             Console.WriteLine("=======================================");
         }
@@ -299,6 +308,7 @@ namespace BeastVault.Api.Infrastructure.Configuration
             BackupDirectory = Path.Combine(newPath, "backup");
             TagImagesDirectory = Path.Combine(newPath, "tag-images");
             SaveFilesDirectory = Path.Combine(newPath, "saves");
+            TcgAssetsDirectory = Path.Combine(newPath, "tcg-assets");
 
             // Asegurar que el directorio de backup existe
             if (!Directory.Exists(BackupDirectory))
@@ -309,6 +319,9 @@ namespace BeastVault.Api.Infrastructure.Configuration
 
             if (!Directory.Exists(SaveFilesDirectory))
                 Directory.CreateDirectory(SaveFilesDirectory);
+
+            if (!Directory.Exists(TcgAssetsDirectory))
+                Directory.CreateDirectory(TcgAssetsDirectory);
 
             Console.WriteLine($"Pokemon files path updated: {PokemonFilesDirectory}");
             Console.WriteLine($"Backup directory updated: {BackupDirectory}");

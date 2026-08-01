@@ -204,6 +204,7 @@ namespace BeastVault.Api.Infrastructure
             b.Entity<TcgSetEntity>().HasKey(x => x.Id);
             b.Entity<TcgSetEntity>().HasIndex(x => new { x.Provider, x.ProviderSetId }).IsUnique();
             b.Entity<TcgSetEntity>().HasIndex(x => x.ReleaseDate);
+            b.Entity<TcgSetEntity>().HasIndex(x => x.OfficialCode);
 
             b.Entity<TcgCardEntity>().HasKey(x => x.Id);
             b.Entity<TcgCardEntity>().HasIndex(x => new { x.Provider, x.ProviderCardId }).IsUnique();

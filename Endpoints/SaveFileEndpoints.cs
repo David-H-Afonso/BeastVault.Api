@@ -8,6 +8,8 @@ namespace BeastVault.Api.Endpoints;
 public static class SaveFileEndpoints
 {
     private const long MaxSaveFileSize = 128 * 1024 * 1024;
+    private const int MaxTitleLength = 120;
+    private const int MaxNotesLength = 4000;
 
     public static IEndpointRouteBuilder MapSaveFileEndpoints(this IEndpointRouteBuilder app)
     {
@@ -81,12 +83,20 @@ public static class SaveFileEndpoints
             {
                 var userId = context.GetUserId();
                 if (userId is null) return Results.Unauthorized();
-                return await service.UpdateNotesAsync(userId.Value, id, request.Notes, cancellationToken)
+                var title = NormalizeOptionalText(request.Title);
+                var notes = NormalizeOptionalText(request.Notes);
+                if (title?.Length > MaxTitleLength)
+                    return Results.BadRequest($"Save titles cannot exceed {MaxTitleLength} characters.");
+                if (notes?.Length > MaxNotesLength)
+                    return Results.BadRequest($"Save notes cannot exceed {MaxNotesLength} characters.");
+
+                return await service.UpdateMetadataAsync(userId.Value, id, title, notes, cancellationToken)
                     ? Results.NoContent()
                     : Results.NotFound();
             })
             .WithName("UpdateSaveFile")
             .Produces(204)
+            .Produces(400)
             .Produces(404);
 
         group.MapPost("/{id:int}/import", async (
@@ -148,4 +158,7 @@ public static class SaveFileEndpoints
 
         return app;
     }
+
+    private static string? NormalizeOptionalText(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

@@ -6,6 +6,8 @@ public sealed record TcgProviderSet(
     string Id,
     string Name,
     string? Series,
+    string? SeriesId,
+    string? OfficialCode,
     int PrintedTotal,
     int Total,
     DateTime? ReleaseDate,
@@ -31,12 +33,15 @@ public sealed record TcgProviderCard(
     IReadOnlyDictionary<string, decimal> VariantPricesUsd,
     DateTime? PriceUpdatedAt,
     string? CardmarketUrl,
-    string? TcgplayerUrl);
+    string? TcgplayerUrl,
+    bool IsComplete);
 
 public interface ITcgDexProvider
 {
     Task<IReadOnlyList<TcgProviderSet>> GetSetsAsync(string language, CancellationToken cancellationToken);
     Task<TcgProviderSet?> GetSetAsync(string setId, string language, CancellationToken cancellationToken);
+    Task<TcgProviderSet?> GetSetByOfficialCodeAsync(string officialCode, string language, CancellationToken cancellationToken);
+    Task<TcgProviderCard?> GetSetCardAsync(string setId, string localId, string language, CancellationToken cancellationToken);
     Task<TcgProviderCard?> GetCardAsync(string cardId, string language, CancellationToken cancellationToken);
     Task<IReadOnlyList<TcgProviderCard>> SearchCardsAsync(
         string? query,

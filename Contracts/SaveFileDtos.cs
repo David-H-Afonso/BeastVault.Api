@@ -20,7 +20,11 @@ public sealed record SaveFileSummaryDto(
     int DexCaught,
     int PartyCount,
     int StoredPokemonCount,
-    bool ChecksumsValid);
+    bool ChecksumsValid,
+    string? Title = null,
+    string DisplayTitle = "",
+    int TrainerGender = 0,
+    int? BadgeTotal = null);
 
 public sealed record SaveTrainerDto(
     string TrainerName,
@@ -84,4 +88,4 @@ public sealed record SavePokemonImportResultDto(
     int? PokemonId = null,
     string? Message = null);
 
-public sealed record UpdateSaveFileRequest(string? Notes);
+public sealed record UpdateSaveFileRequest(string? Title, string? Notes);

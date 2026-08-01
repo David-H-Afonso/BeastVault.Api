@@ -48,6 +48,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IUserApiCredentialService, UserApiCredentialService>();
         services.AddScoped<ITcgDexProvider, TcgDexProvider>();
         services.AddScoped<IPokemonTcgIoProvider, PokemonTcgIoProvider>();
+        services.AddScoped<TcgAssetCacheService>();
         services.AddScoped<FileWatcherService>();
         services.AddScoped<IPokemonService, PokemonService>();
         services.AddScoped<ITagService, TagService>();

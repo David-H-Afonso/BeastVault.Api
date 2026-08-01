@@ -900,9 +900,12 @@ using (var scope = app.Services.CreateScope())
             ""GameName"" TEXT NOT NULL,
             ""SaveType"" TEXT NOT NULL,
             ""ChecksumsValid"" INTEGER NOT NULL,
+            ""Title"" TEXT,
             ""Notes"" TEXT,
             ""ImportedAt"" TEXT NOT NULL,
             CONSTRAINT ""FK_SaveFiles_Users_UserId"" FOREIGN KEY (""UserId"") REFERENCES ""Users"" (""Id"") ON DELETE CASCADE)");
+
+        await EnsureColumnAsync("SaveFiles", "Title", "TEXT");
 
         await EnsureTableAsync("SaveTrainers", @"
             ""SaveFileId"" INTEGER NOT NULL PRIMARY KEY,
@@ -970,6 +973,8 @@ using (var scope = app.Services.CreateScope())
             ""Name"" TEXT NOT NULL,
             ""NameEn"" TEXT,
             ""Series"" TEXT,
+            ""SeriesId"" TEXT,
+            ""OfficialCode"" TEXT,
             ""PrintedTotal"" INTEGER NOT NULL,
             ""Total"" INTEGER NOT NULL,
             ""ReleaseDate"" TEXT,
@@ -1002,7 +1007,14 @@ using (var scope = app.Services.CreateScope())
             ""TcgplayerUrl"" TEXT,
             ""SyncedAt"" TEXT NOT NULL,
             ""DetailedAt"" TEXT,
+            ""PriceCheckedAt"" TEXT,
+            ""LastRefreshError"" TEXT,
             CONSTRAINT ""FK_TcgCards_TcgSets_SetId"" FOREIGN KEY (""SetId"") REFERENCES ""TcgSets"" (""Id"") ON DELETE CASCADE)");
+
+        await EnsureColumnAsync("TcgSets", "SeriesId", "TEXT");
+        await EnsureColumnAsync("TcgSets", "OfficialCode", "TEXT");
+        await EnsureColumnAsync("TcgCards", "PriceCheckedAt", "TEXT");
+        await EnsureColumnAsync("TcgCards", "LastRefreshError", "TEXT");
 
         await EnsureTableAsync("UserTcgCards", @"
             ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -1031,6 +1043,7 @@ using (var scope = app.Services.CreateScope())
         {
             @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_TcgSets_Provider_ProviderSetId"" ON ""TcgSets"" (""Provider"", ""ProviderSetId"")",
             @"CREATE INDEX IF NOT EXISTS ""IX_TcgSets_ReleaseDate"" ON ""TcgSets"" (""ReleaseDate"")",
+            @"CREATE INDEX IF NOT EXISTS ""IX_TcgSets_OfficialCode"" ON ""TcgSets"" (""OfficialCode"")",
             @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_TcgCards_Provider_ProviderCardId"" ON ""TcgCards"" (""Provider"", ""ProviderCardId"")",
             @"CREATE INDEX IF NOT EXISTS ""IX_TcgCards_SetId_Number"" ON ""TcgCards"" (""SetId"", ""Number"")",
             @"CREATE INDEX IF NOT EXISTS ""IX_TcgCards_Name"" ON ""TcgCards"" (""Name"")",
