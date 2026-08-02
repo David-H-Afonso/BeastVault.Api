@@ -45,7 +45,8 @@ public sealed record SavePokedexEntryDto(
     int SpeciesId,
     string SpeciesName,
     bool Seen,
-    bool Caught);
+    bool Caught,
+    bool IsVersionExclusive = false);
 
 public sealed record SavePokedexProgressDto(
     IReadOnlyList<SavePokedexEntryDto> Entries,

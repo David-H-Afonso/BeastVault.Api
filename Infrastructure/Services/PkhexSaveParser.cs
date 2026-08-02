@@ -125,17 +125,17 @@ public sealed class PkhexSaveParser
         if (!save.HasPokeDex)
             return result;
 
-        var maxSpecies = SavePokedexRules.NationalMax(save.Generation);
-        for (ushort species = 1; species <= maxSpecies; species++)
+        var validSpecies = SavePokedexRules.NationalSpecies((int)save.Version, save.Generation);
+        foreach (var speciesId in validSpecies)
         {
             try
             {
                 result.Add(new SavePokedexEntryEntity
                 {
-                    SpeciesId = species,
-                    SpeciesName = PkHexStringService.GetSpeciesName(species),
-                    Seen = save.GetSeen(species),
-                    Caught = save.GetCaught(species)
+                    SpeciesId = speciesId,
+                    SpeciesName = PkHexStringService.GetSpeciesName(speciesId),
+                    Seen = save.GetSeen((ushort)speciesId),
+                    Caught = save.GetCaught((ushort)speciesId)
                 });
             }
             catch (ArgumentOutOfRangeException)

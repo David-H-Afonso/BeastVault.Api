@@ -94,7 +94,12 @@ public sealed class SaveFileService(
             .AsNoTracking()
             .Where(x => x.SaveFileId == saveFileId && x.SaveFile.UserId == userId)
             .OrderBy(x => x.SpeciesId)
-            .Select(x => new SavePokedexEntryDto(x.SpeciesId, x.SpeciesName, x.Seen, x.Caught))
+            .Select(x => new SavePokedexEntryDto(
+                x.SpeciesId,
+                x.SpeciesName,
+                x.Seen,
+                x.Caught,
+                SavePokedexRules.IsVersionExclusive(save.OriginGame, x.SpeciesId)))
             .ToListAsync(cancellationToken);
 
         var pokemonRows = await db.SavePokemonPreviews
