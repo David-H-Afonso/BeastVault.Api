@@ -26,6 +26,8 @@ public sealed class PkhexSaveParser
                 return null;
 
             var format = GetFormat(fileName, save);
+            var pokedex = ReadPokedex(save);
+            var regionalIds = SavePokedexRules.RegionalSpecies((int)save.Version, save.Generation, PkHexStringService.GetVersionName((int)save.Version));
             var trainer = new SaveTrainerEntity
             {
                 TrainerName = save.OT ?? string.Empty,
@@ -38,8 +40,8 @@ public sealed class PkhexSaveParser
                 PlayTimeMinutes = save.PlayedMinutes,
                 PlayTimeSeconds = save.PlayedSeconds,
                 BadgeCount = GetBadgeCount(save),
-                DexSeen = save.HasPokeDex ? save.SeenCount : 0,
-                DexCaught = save.HasPokeDex ? save.CaughtCount : 0
+                DexSeen = pokedex.Count(x => x.Seen && regionalIds.Contains(x.SpeciesId)),
+                DexCaught = pokedex.Count(x => x.Caught && regionalIds.Contains(x.SpeciesId))
             };
 
             var entity = new SaveFileEntity
@@ -59,7 +61,6 @@ public sealed class PkhexSaveParser
                 Trainer = trainer
             };
 
-            var pokedex = ReadPokedex(save);
             var previews = ReadPokemon(save);
             entity.PokedexEntries = pokedex;
             entity.PokemonPreviews = previews;
@@ -124,15 +125,23 @@ public sealed class PkhexSaveParser
         if (!save.HasPokeDex)
             return result;
 
-        for (ushort species = 1; species <= save.MaxSpeciesID; species++)
+        var maxSpecies = SavePokedexRules.NationalMax(save.Generation);
+        for (ushort species = 1; species <= maxSpecies; species++)
         {
-            result.Add(new SavePokedexEntryEntity
+            try
             {
-                SpeciesId = species,
-                SpeciesName = PkHexStringService.GetSpeciesName(species),
-                Seen = save.GetSeen(species),
-                Caught = save.GetCaught(species)
-            });
+                result.Add(new SavePokedexEntryEntity
+                {
+                    SpeciesId = species,
+                    SpeciesName = PkHexStringService.GetSpeciesName(species),
+                    Seen = save.GetSeen(species),
+                    Caught = save.GetCaught(species)
+                });
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                // Some games expose a regional dex smaller than the generation's national range.
+            }
         }
         return result;
     }

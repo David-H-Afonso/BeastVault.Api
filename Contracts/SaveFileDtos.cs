@@ -47,6 +47,12 @@ public sealed record SavePokedexEntryDto(
     bool Seen,
     bool Caught);
 
+public sealed record SavePokedexProgressDto(
+    IReadOnlyList<SavePokedexEntryDto> Entries,
+    int Seen,
+    int Caught,
+    int Total);
+
 public sealed record SavePokemonPreviewDto(
     int Id,
     string Location,
@@ -72,7 +78,9 @@ public sealed record SaveFileDetailDto(
     SaveFileSummaryDto Summary,
     SaveTrainerDto Trainer,
     IReadOnlyList<SavePokedexEntryDto> Pokedex,
-    IReadOnlyList<SavePokemonPreviewDto> Pokemon);
+    IReadOnlyList<SavePokemonPreviewDto> Pokemon,
+    SavePokedexProgressDto? RegionalPokedex = null,
+    SavePokedexProgressDto? NationalPokedex = null);
 
 public sealed record SaveFileUploadResultDto(
     string FileName,

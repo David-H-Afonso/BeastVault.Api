@@ -131,10 +131,15 @@ public sealed class SaveFileService(
             pokemonRows.Select(x => (x.Id, x.PokemonHash, x.PokemonStoredHash)),
             cancellationToken);
 
+        var pokedexDtos = pokedex.Select(x => new SavePokedexEntryDto(x.SpeciesId, x.SpeciesName, x.Seen, x.Caught)).ToList();
+        var regionalIds = SavePokedexRules.RegionalSpecies(save.OriginGame, save.Generation, save.GameName);
+        var regional = pokedexDtos.Where(x => regionalIds.Contains(x.SpeciesId)).ToList();
+        var national = pokedexDtos;
+
         return new SaveFileDetailDto(
             ToSummary(save),
             ToTrainer(save),
-            pokedex,
+            national,
             pokemonRows.Select(x =>
             {
                 var existingPokemonId = existing.GetValueOrDefault(x.Id);
@@ -158,7 +163,9 @@ public sealed class SaveFileService(
                     DeserializeMoves(x.MovesJson),
                     x.PokemonHash,
                     existingPokemonId > 0 ? existingPokemonId : null);
-            }).ToList());
+            }).ToList(),
+            ToPokedexProgress(regional),
+            ToPokedexProgress(national));
     }
 
     public async Task<bool> UpdateMetadataAsync(
@@ -500,6 +507,9 @@ public sealed class SaveFileService(
         save.BadgeCount,
         save.DexSeen,
         save.DexCaught);
+
+    private static SavePokedexProgressDto ToPokedexProgress(IReadOnlyList<SavePokedexEntryDto> entries) =>
+        new(entries, entries.Count(x => x.Seen), entries.Count(x => x.Caught), entries.Count);
 
     private static IReadOnlyList<string> DeserializeMoves(string value)
     {
