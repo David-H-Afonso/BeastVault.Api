@@ -99,36 +99,65 @@ public static class TcgCollectionEndpoints
             .Produces(404)
             .Produces(503);
 
-        group.MapPost("/sets/{setProviderId}/assets/cache", async (
+        group.MapPost("/sets/{setProviderId}/assets/cache", (
                 string setProviderId,
-                TcgCollectionService service,
-                TcgAssetCacheService assets,
                 HttpContext context,
-                CancellationToken cancellationToken) =>
+                IServiceScopeFactory scopeFactory,
+                ILoggerFactory loggerFactory) =>
             {
                 var userId = context.GetUserId();
                 if (userId is null) return Results.Unauthorized();
-                var cardIds = await service.GetSetCardIdsForAssetCacheAsync(setProviderId, cancellationToken);
-                if (cardIds is null) return Results.NotFound();
-                var result = await assets.CacheCardsAsync(cardIds, cancellationToken);
-                return Results.Ok(new TcgAssetCacheResultDto(result.Requested, result.Cached));
+
+                _ = Task.Run(async () =>
+                {
+                    using var scope = scopeFactory.CreateScope();
+                    var service = scope.ServiceProvider.GetRequiredService<TcgCollectionService>();
+                    var assets = scope.ServiceProvider.GetRequiredService<TcgAssetCacheService>();
+                    var logger = loggerFactory.CreateLogger("TcgAssetCache");
+                    try
+                    {
+                        var cardIds = await service.GetSetCardIdsForAssetCacheAsync(setProviderId, CancellationToken.None);
+                        if (cardIds is not null) await assets.CacheCardsAsync(cardIds, CancellationToken.None);
+                    }
+                    catch (Exception exception)
+                    {
+                        logger.LogWarning(exception, "TCG set asset cache failed for {SetId}", setProviderId);
+                    }
+                });
+
+                return Results.Accepted(value: new { message = "Set image cache started." });
             })
             .WithName("CacheTcgSetAssets")
             .RequireRateLimiting("tcg-refresh")
             .Produces<TcgAssetCacheResultDto>()
             .Produces(404);
 
-        group.MapPost("/assets/cache", async (
-                TcgCollectionService service,
-                TcgAssetCacheService assets,
+        group.MapPost("/assets/cache", (
                 HttpContext context,
-                CancellationToken cancellationToken) =>
+                IServiceScopeFactory scopeFactory,
+                ILoggerFactory loggerFactory) =>
             {
                 var userId = context.GetUserId();
                 if (userId is null) return Results.Unauthorized();
-                var cardIds = await service.GetAllCardIdsForAssetCacheAsync(cancellationToken);
-                var result = await assets.CacheCardsAsync(cardIds, cancellationToken);
-                return Results.Ok(new TcgAssetCacheResultDto(result.Requested, result.Cached));
+
+                _ = Task.Run(async () =>
+                {
+                    using var scope = scopeFactory.CreateScope();
+                    var service = scope.ServiceProvider.GetRequiredService<TcgCollectionService>();
+                    var assets = scope.ServiceProvider.GetRequiredService<TcgAssetCacheService>();
+                    var logger = loggerFactory.CreateLogger("TcgAssetCache");
+                    try
+                    {
+                        var cardIds = await service.GetAllCardIdsForAssetCacheAsync(CancellationToken.None);
+                        await assets.CacheCardsAsync(cardIds, CancellationToken.None);
+                    }
+                    catch (Exception exception)
+                    {
+                        logger.LogWarning(exception, "Full TCG asset cache failed");
+                    }
+                });
+
+                return Results.Accepted(value: new { message = "Full image cache started." });
             })
             .WithName("CacheAllTcgAssets")
             .RequireRateLimiting("tcg-refresh")
