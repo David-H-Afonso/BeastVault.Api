@@ -118,6 +118,22 @@ public static class TcgCollectionEndpoints
             .Produces<TcgAssetCacheResultDto>()
             .Produces(404);
 
+        group.MapPost("/assets/cache", async (
+                TcgCollectionService service,
+                TcgAssetCacheService assets,
+                HttpContext context,
+                CancellationToken cancellationToken) =>
+            {
+                var userId = context.GetUserId();
+                if (userId is null) return Results.Unauthorized();
+                var cardIds = await service.GetAllCardIdsForAssetCacheAsync(cancellationToken);
+                var result = await assets.CacheCardsAsync(cardIds, cancellationToken);
+                return Results.Ok(new TcgAssetCacheResultDto(result.Requested, result.Cached));
+            })
+            .WithName("CacheAllTcgAssets")
+            .RequireRateLimiting("tcg-refresh")
+            .Produces<TcgAssetCacheResultDto>();
+
         group.MapGet("/cards/search", async (
                 string? query,
                 int? setId,

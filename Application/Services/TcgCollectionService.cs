@@ -105,6 +105,16 @@ public sealed class TcgCollectionService(
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<int>> GetAllCardIdsForAssetCacheAsync(CancellationToken cancellationToken)
+    {
+        await EnsureSetsAsync(cancellationToken);
+        var sets = await db.TcgSets.OrderBy(x => x.ReleaseDate).ToListAsync(cancellationToken);
+        foreach (var set in sets)
+            await EnsureSetCardsAsync(set, cancellationToken);
+
+        return await db.TcgCards.AsNoTracking().Select(x => x.Id).ToListAsync(cancellationToken);
+    }
+
     public async Task<TcgCardPageDto> SearchCardsAsync(
         int userId,
         string? query,
@@ -541,6 +551,8 @@ public sealed class TcgCollectionService(
                 group.Select(x => x.CardId).Distinct().Count(),
                 group.Select(x => x.Card.Set).First().Total,
                 Percent(group.Select(x => x.CardId).Distinct().Count(), group.Select(x => x.Card.Set).First().Total)))
+            .GroupBy(x => x.ProviderSetId, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
             .OrderByDescending(x => x.CompletionPercent).ThenBy(x => x.Name).ToList();
         var ownedLookup = entries.GroupBy(x => x.CardId).ToDictionary(x => x.Key, x => (IReadOnlyList<UserTcgCardEntity>)x.ToList());
         var top = entries.OrderByDescending(x =>
