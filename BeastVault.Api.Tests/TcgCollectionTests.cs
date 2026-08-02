@@ -158,7 +158,7 @@ public sealed class TcgCollectionTests : IClassFixture<HouseholdApiFactory>
         var charmander = Assert.Single(groups, item => item.GetProperty("card").GetProperty("name").GetString() == "Charmander");
         Assert.Equal(2, charmander.GetProperty("entries").GetArrayLength());
         Assert.Equal(3, charmander.GetProperty("totalCopies").GetInt32());
-        Assert.Equal(30m, charmander.GetProperty("totalValueEur").GetDecimal());
+        Assert.Equal(20m, charmander.GetProperty("totalValueEur").GetDecimal());
     }
 
     [Fact]

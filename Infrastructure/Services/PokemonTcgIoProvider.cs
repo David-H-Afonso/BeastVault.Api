@@ -65,7 +65,8 @@ public sealed class PokemonTcgIoProvider(IHttpClientFactory httpClientFactory) :
             Latest(ParseDate(GetString(cardmarket, "updatedAt")), ParseDate(GetString(tcgplayer, "updatedAt"))),
             AllowHttpsUrl(GetString(cardmarket, "url"), "prices.pokemontcg.io", "cardmarket.com"),
             AllowHttpsUrl(GetString(tcgplayer, "url"), "prices.pokemontcg.io", "tcgplayer.com"),
-            IsComplete: true);
+            IsComplete: true,
+            RawMetadataJson: value.GetRawText());
     }
 
     private static string? GetString(JsonElement value, string property) =>

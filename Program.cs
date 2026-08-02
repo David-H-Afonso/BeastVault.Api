@@ -276,6 +276,7 @@ builder.Services.AddHttpClient("TcgDex", client =>
     client.Timeout = TimeSpan.FromSeconds(30);
     client.MaxResponseContentBufferSize = 10 * 1024 * 1024;
 })
+.AddHttpMessageHandler<RetryAfterHandler>()
 .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
 builder.Services.AddHttpClient("PokemonTcgIo", client =>
@@ -285,6 +286,7 @@ builder.Services.AddHttpClient("PokemonTcgIo", client =>
     client.Timeout = TimeSpan.FromSeconds(30);
     client.MaxResponseContentBufferSize = 10 * 1024 * 1024;
 })
+.AddHttpMessageHandler<RetryAfterHandler>()
 .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
 // CORS — read comma-separated origins from CORS_ALLOWED_ORIGINS env var
@@ -1009,12 +1011,14 @@ using (var scope = app.Services.CreateScope())
             ""DetailedAt"" TEXT,
             ""PriceCheckedAt"" TEXT,
             ""LastRefreshError"" TEXT,
+            ""ProviderMetadataJson"" TEXT NOT NULL DEFAULT '{}',
             CONSTRAINT ""FK_TcgCards_TcgSets_SetId"" FOREIGN KEY (""SetId"") REFERENCES ""TcgSets"" (""Id"") ON DELETE CASCADE)");
 
         await EnsureColumnAsync("TcgSets", "SeriesId", "TEXT");
         await EnsureColumnAsync("TcgSets", "OfficialCode", "TEXT");
         await EnsureColumnAsync("TcgCards", "PriceCheckedAt", "TEXT");
         await EnsureColumnAsync("TcgCards", "LastRefreshError", "TEXT");
+        await EnsureColumnAsync("TcgCards", "ProviderMetadataJson", "TEXT NOT NULL DEFAULT '{}'");
 
         await EnsureTableAsync("UserTcgCards", @"
             ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,

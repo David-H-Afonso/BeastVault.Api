@@ -14,7 +14,8 @@ public sealed class TcgCollectionService(
     AppDbContext db,
     ITcgDexProvider tcgDex,
     IPokemonTcgIoProvider pokemonTcgIo,
-    IUserApiCredentialService credentials)
+    IUserApiCredentialService credentials,
+    TcgAssetCacheService assets)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private const int MaxBatchCards = 10;
@@ -53,21 +54,25 @@ public sealed class TcgCollectionService(
                 (x.OfficialCode != null && x.OfficialCode.ToLower().Contains(term)));
         }
 
-        var sets = await query.OrderByDescending(x => x.ReleaseDate).ThenBy(x => x.Name).ToListAsync(cancellationToken);
+        var sets = (await query.OrderByDescending(x => x.ReleaseDate).ThenBy(x => x.Name).ToListAsync(cancellationToken))
+            .GroupBy(x => $"{x.Provider}:{x.ProviderSetId}", StringComparer.OrdinalIgnoreCase)
+            .Select(x => x.First())
+            .ToList();
         var ownership = await db.UserTcgCards.AsNoTracking()
             .Where(x => x.UserId == userId)
-            .GroupBy(x => x.Card.SetId)
+            .GroupBy(x => new { x.Card.Provider, x.Card.Set.ProviderSetId })
             .Select(x => new
             {
-                SetId = x.Key,
+                Provider = x.Key.Provider,
+                ProviderSetId = x.Key.ProviderSetId,
                 Unique = x.Select(entry => entry.CardId).Distinct().Count(),
                 Copies = x.Sum(entry => entry.Quantity)
             })
-            .ToDictionaryAsync(x => x.SetId, cancellationToken);
+            .ToDictionaryAsync(x => $"{x.Provider}:{x.ProviderSetId}", cancellationToken);
 
         return sets.Select(set =>
         {
-            ownership.TryGetValue(set.Id, out var owned);
+            ownership.TryGetValue($"{set.Provider}:{set.ProviderSetId}", out var owned);
             return ToSetDto(set, owned?.Unique ?? 0, owned?.Copies ?? 0);
         }).ToList();
     }
@@ -84,6 +89,20 @@ public sealed class TcgCollectionService(
         if (set is null) return null;
         await EnsureSetCardsAsync(set, cancellationToken);
         return await QueryCardsAsync(userId, x => x.SetId == set.Id, page, pageSize, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<int>?> GetSetCardIdsForAssetCacheAsync(
+        string providerSetId,
+        CancellationToken cancellationToken)
+    {
+        await EnsureSetsAsync(cancellationToken);
+        var set = await db.TcgSets.SingleOrDefaultAsync(x => x.ProviderSetId == providerSetId, cancellationToken);
+        if (set is null) return null;
+        await EnsureSetCardsAsync(set, cancellationToken);
+        return await db.TcgCards.AsNoTracking()
+            .Where(x => x.SetId == set.Id)
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
     }
 
     public async Task<TcgCardPageDto> SearchCardsAsync(
@@ -514,14 +533,14 @@ public sealed class TcgCollectionService(
 
         var national = BuildDexProgress("National", 1, 1025, ownedSpecies);
         var regions = Regions.Select(region => BuildDexProgress(region.Name, region.First, region.Last, ownedSpecies)).ToList();
-        var setProgress = entries.GroupBy(x => x.Card.Set)
+        var setProgress = entries.GroupBy(x => new { x.Card.Set.Provider, x.Card.Set.ProviderSetId })
             .Select(group => new TcgSetProgressDto(
-                group.Key.Id,
+                group.Select(x => x.Card.SetId).First(),
                 group.Key.ProviderSetId,
-                group.Key.Name,
+                group.Select(x => x.Card.Set).First().Name,
                 group.Select(x => x.CardId).Distinct().Count(),
-                group.Key.Total,
-                Percent(group.Select(x => x.CardId).Distinct().Count(), group.Key.Total)))
+                group.Select(x => x.Card.Set).First().Total,
+                Percent(group.Select(x => x.CardId).Distinct().Count(), group.Select(x => x.Card.Set).First().Total)))
             .OrderByDescending(x => x.CompletionPercent).ThenBy(x => x.Name).ToList();
         var ownedLookup = entries.GroupBy(x => x.CardId).ToDictionary(x => x.Key, x => (IReadOnlyList<UserTcgCardEntity>)x.ToList());
         var top = entries.OrderByDescending(x =>
@@ -681,6 +700,7 @@ public sealed class TcgCollectionService(
             .Where(x => x.Provider == "tcgdex" && providerCardIds.Contains(x.ProviderCardId))
             .ToListAsync(cancellationToken);
         var cardsById = cards.ToDictionary(x => x.ProviderCardId, StringComparer.OrdinalIgnoreCase);
+        var newProviderCardIds = new List<string>();
         foreach (var providerCard in all)
         {
             var set = setsById[providerCard.SetId];
@@ -695,11 +715,20 @@ public sealed class TcgCollectionService(
                 };
                 cardsById[providerCard.Id] = entity;
                 db.TcgCards.Add(entity);
+                newProviderCardIds.Add(providerCard.Id);
             }
             ApplyCard(entity, providerCard, spanishById.GetValueOrDefault(providerCard.Id));
             entity.SetId = set.Id;
         }
         await db.SaveChangesAsync(cancellationToken);
+        if (newProviderCardIds.Count > 0)
+        {
+            var newCardIds = await db.TcgCards.AsNoTracking()
+                .Where(x => x.Provider == "tcgdex" && newProviderCardIds.Contains(x.ProviderCardId))
+                .Select(x => x.Id)
+                .ToListAsync(cancellationToken);
+            await assets.CacheCardsAsync(newCardIds, cancellationToken);
+        }
     }
 
     private async Task<string?> RefreshCardEntityAsync(int userId, TcgCardEntity entity, CancellationToken cancellationToken)
@@ -726,7 +755,9 @@ public sealed class TcgCollectionService(
         else errors.Add("TCGdex did not return card detail.");
 
         var apiKey = await credentials.GetTcgApiKeyAsync(userId, cancellationToken);
-        if (!string.IsNullOrWhiteSpace(apiKey) && (entity.PriceEur is null || entity.PriceUsd is null))
+        if (!string.IsNullOrWhiteSpace(apiKey) &&
+            (entity.PriceEur is null || entity.PriceUsd is null ||
+             entity.PriceCheckedAt is null || entity.PriceCheckedAt < DateTime.UtcNow.AddHours(-24)))
         {
             try
             {
@@ -1097,6 +1128,7 @@ public sealed class TcgCollectionService(
         entity.PriceUpdatedAt = Latest(entity.PriceUpdatedAt, Latest(english.PriceUpdatedAt, localized.PriceUpdatedAt));
         entity.CardmarketUrl = FirstNotEmpty(localized.CardmarketUrl, english.CardmarketUrl, entity.CardmarketUrl);
         entity.TcgplayerUrl = FirstNotEmpty(localized.TcgplayerUrl, english.TcgplayerUrl, entity.TcgplayerUrl);
+        entity.ProviderMetadataJson = FirstNotEmpty(english.RawMetadataJson, localized.RawMetadataJson, entity.ProviderMetadataJson) ?? "{}";
         entity.CardmarketUrl ??= $"https://www.cardmarket.com/en/Pokemon/Products/Search?searchString={Uri.EscapeDataString(localized.Name)}";
         entity.TcgplayerUrl ??= $"https://www.tcgplayer.com/search/pokemon/product?productLineName=pokemon&q={Uri.EscapeDataString(localized.Name)}";
         entity.SyncedAt = DateTime.UtcNow;
@@ -1115,6 +1147,7 @@ public sealed class TcgCollectionService(
         entity.PriceUpdatedAt = Latest(entity.PriceUpdatedAt, value.PriceUpdatedAt);
         entity.CardmarketUrl = value.CardmarketUrl ?? entity.CardmarketUrl;
         entity.TcgplayerUrl = value.TcgplayerUrl ?? entity.TcgplayerUrl;
+        entity.ProviderMetadataJson = value.RawMetadataJson ?? entity.ProviderMetadataJson;
         entity.VariantsJson = JsonSerializer.Serialize(
             Deserialize<string>(entity.VariantsJson).Concat(value.Variants).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             JsonOptions);
@@ -1144,7 +1177,7 @@ public sealed class TcgCollectionService(
         var merged = DeserializeDictionary(existingJson);
         foreach (var prices in incoming)
             foreach (var price in prices)
-                merged[price.Key] = price.Value;
+                merged[TcgDexProvider.NormalizeVariant(price.Key)] = price.Value;
         return JsonSerializer.Serialize(merged, JsonOptions);
     }
 
@@ -1161,15 +1194,22 @@ public sealed class TcgCollectionService(
     private static decimal? GetVariantPrice(string json, string variant, decimal? fallback)
     {
         var prices = DeserializeDictionary(json);
-        if (prices.TryGetValue(variant, out var exact)) return exact;
         var normalized = TcgDexProvider.NormalizeVariant(variant);
-        if (prices.TryGetValue(normalized, out exact)) return exact;
-        return fallback;
+        if (prices.TryGetValue(normalized, out var exact)) return exact;
+        if (prices.TryGetValue(variant, out exact)) return exact;
+        return prices.Count == 0 ? fallback : null;
     }
 
     private static Dictionary<string, decimal> DeserializeDictionary(string json)
     {
-        try { return JsonSerializer.Deserialize<Dictionary<string, decimal>>(json, JsonOptions) ?? new(StringComparer.OrdinalIgnoreCase); }
+        try
+        {
+            var values = JsonSerializer.Deserialize<Dictionary<string, decimal>>(json, JsonOptions) ?? [];
+            var normalized = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+            foreach (var value in values)
+                normalized[TcgDexProvider.NormalizeVariant(value.Key)] = value.Value;
+            return normalized;
+        }
         catch (JsonException) { return new(StringComparer.OrdinalIgnoreCase); }
     }
 

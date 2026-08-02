@@ -34,7 +34,8 @@ public sealed record TcgProviderCard(
     DateTime? PriceUpdatedAt,
     string? CardmarketUrl,
     string? TcgplayerUrl,
-    bool IsComplete);
+    bool IsComplete,
+    string? RawMetadataJson = null);
 
 public interface ITcgDexProvider
 {

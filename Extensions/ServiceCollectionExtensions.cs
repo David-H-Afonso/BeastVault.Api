@@ -35,6 +35,7 @@ public static class ServiceCollectionExtensions
 
     public static IServiceCollection AddBeastVaultServices(this IServiceCollection services, IConfiguration config)
     {
+        services.AddTransient<RetryAfterHandler>();
         services.AddScoped<FileStorageService>(sp =>
         {
             var storageConfig = sp.GetRequiredService<StorageConfiguration>();

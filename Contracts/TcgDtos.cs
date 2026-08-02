@@ -170,6 +170,8 @@ public sealed record TcgBatchRefreshResultDto(
     int Processed,
     bool Truncated);
 
+public sealed record TcgAssetCacheResultDto(int Requested, int Cached);
+
 public sealed record TcgApiKeyStatusDto(
     bool Configured,
     string? MaskedApiKey,

@@ -58,6 +58,21 @@ public sealed class TcgAssetCacheService(
             cancellationToken);
     }
 
+    public async Task<(int Requested, int Cached)> CacheCardsAsync(
+        IReadOnlyCollection<int> cardIds,
+        CancellationToken cancellationToken)
+    {
+        var ids = cardIds.Where(x => x > 0).Distinct().ToList();
+        var cached = 0;
+        foreach (var id in ids)
+        {
+            var small = await GetCardAsync(id, "small", cancellationToken);
+            var large = await GetCardAsync(id, "large", cancellationToken);
+            if (small is not null && large is not null) cached++;
+        }
+        return (ids.Count, cached);
+    }
+
     private async Task<TcgCachedAsset?> GetOrFetchAsync(
         string category,
         string id,
@@ -177,9 +192,7 @@ public sealed class TcgAssetCacheService(
     private static IReadOnlyList<string> BuildCardCandidates(TcgCardEntity card, string size)
     {
         var primaryQuality = size == "small" ? "low" : "high";
-        var alternateQuality = size == "small" ? "high" : "low";
         var primarySource = size == "small" ? card.ImageSmall : card.ImageLarge;
-        var alternateSource = size == "small" ? card.ImageLarge : card.ImageSmall;
         var result = new List<string>();
 
         if (card.Provider.Equals("tcgdex", StringComparison.OrdinalIgnoreCase) &&
@@ -193,15 +206,12 @@ public sealed class TcgAssetCacheService(
 
             if (!string.IsNullOrWhiteSpace(primarySource)) result.Add(primarySource);
 
-            foreach (var language in new[] { "en", "es", "univ" })
-                result.Add(BuildTcgDexCardUrl(language, card.Set.SeriesId, card.Set.ProviderSetId, localId, alternateQuality));
         }
         else if (!string.IsNullOrWhiteSpace(primarySource))
         {
             result.Add(primarySource);
         }
 
-        if (!string.IsNullOrWhiteSpace(alternateSource)) result.Add(alternateSource);
         return result;
     }
 
@@ -212,7 +222,22 @@ public sealed class TcgAssetCacheService(
     {
         var candidates = BuildCardCandidates(card, size).ToList();
         if (card.Provider.Equals("tcgdex", StringComparison.OrdinalIgnoreCase) &&
-            (string.IsNullOrWhiteSpace(card.Set.SeriesId) || candidates.Count == 0) &&
+            !string.IsNullOrWhiteSpace(card.ProviderCardId))
+        {
+            try
+            {
+                var providerCard = await _tcgDex.GetCardAsync(card.ProviderCardId, "en", cancellationToken);
+                var providerSource = size == "small" ? providerCard?.ImageSmall : providerCard?.ImageLarge;
+                if (!string.IsNullOrWhiteSpace(providerSource)) candidates.Insert(0, providerSource);
+            }
+            catch (HttpRequestException)
+            {
+                // Keep local and inferred candidates when provider detail is unavailable.
+            }
+        }
+
+        if (card.Provider.Equals("tcgdex", StringComparison.OrdinalIgnoreCase) &&
+            string.IsNullOrWhiteSpace(card.Set.SeriesId) &&
             !string.IsNullOrWhiteSpace(card.Set.ProviderSetId) &&
             !string.IsNullOrWhiteSpace(card.Number))
         {

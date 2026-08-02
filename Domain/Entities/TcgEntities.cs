@@ -46,6 +46,7 @@ public class TcgCardEntity
     public string? LastRefreshError { get; set; }
     public string? CardmarketUrl { get; set; }
     public string? TcgplayerUrl { get; set; }
+    public string ProviderMetadataJson { get; set; } = "{}";
     public DateTime SyncedAt { get; set; } = DateTime.UtcNow;
     public DateTime? DetailedAt { get; set; }
 

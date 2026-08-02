@@ -189,7 +189,8 @@ public sealed class TcgDexProvider(IHttpClientFactory httpClientFactory) : ITcgD
             Latest(cardmarketUpdated, tcgplayerUpdated),
             cardmarketUrl,
             tcgplayerUrl,
-            isComplete);
+            isComplete,
+            value.GetRawText());
     }
 
     private static List<string> ParseVariants(JsonElement value)
