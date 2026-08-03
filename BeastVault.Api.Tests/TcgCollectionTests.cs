@@ -78,7 +78,13 @@ public sealed class TcgCollectionTests : IClassFixture<HouseholdApiFactory>
         using (var json = JsonDocument.Parse(await collection.Content.ReadAsStringAsync()))
         {
             var item = Assert.Single(json.RootElement.GetProperty("items").EnumerateArray());
-            Assert.Equal("Charmander", item.GetProperty("card").GetProperty("name").GetString());
+            var card = item.GetProperty("card");
+            Assert.Equal("Charmander", card.GetProperty("name").GetString());
+            Assert.Equal("TST 1", card.GetProperty("collectorReference").GetString());
+            Assert.Equal(
+                "https://www.cardmarket.com/en/Pokemon/Products/Search?searchString=TST%201",
+                card.GetProperty("prices").GetProperty("cardmarketUrl").GetString());
+            Assert.Contains("q=TST%201", card.GetProperty("prices").GetProperty("tcgplayerUrl").GetString());
             Assert.Equal(50m, item.GetProperty("totalValueEur").GetDecimal());
             var entry = Assert.Single(item.GetProperty("entries").EnumerateArray());
             Assert.Equal("ES", entry.GetProperty("language").GetString());
@@ -277,6 +283,7 @@ public sealed class TcgCollectionTests : IClassFixture<HouseholdApiFactory>
         var set = new TcgSetEntity
         {
             ProviderSetId = providerSetId,
+            OfficialCode = "TST",
             Name = "Test Collection",
             NameEn = "Test Collection",
             PrintedTotal = 2,

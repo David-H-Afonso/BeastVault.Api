@@ -32,6 +32,7 @@ public sealed record TcgCardDto(
     int SetId,
     string SetProviderId,
     string SetName,
+    string? CollectorReference,
     TcgPriceDto Prices,
     IReadOnlyList<TcgOwnedEntryDto> Owned,
     int TotalOwned,

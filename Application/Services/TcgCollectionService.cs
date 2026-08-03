@@ -1032,16 +1032,21 @@ public sealed class TcgCollectionService(
         return entries.GroupBy(x => x.CardId).ToDictionary(x => x.Key, x => (IReadOnlyList<UserTcgCardEntity>)x.ToList());
     }
 
-    private static TcgCardDto ToCardDto(TcgCardEntity card, IReadOnlyList<UserTcgCardEntity> owned) => new(
+    private static TcgCardDto ToCardDto(TcgCardEntity card, IReadOnlyList<UserTcgCardEntity> owned)
+    {
+        var collectorReference = GetCollectorReference(card);
+        var cardmarketUrl = BuildMarketplaceSearchUrl("cardmarket", collectorReference) ?? card.CardmarketUrl;
+        var tcgplayerUrl = BuildMarketplaceSearchUrl("tcgplayer", collectorReference) ?? card.TcgplayerUrl;
+        return new(
         card.Id, card.ProviderCardId, card.Name, card.NameEn, card.Number, card.Rarity, card.Artist,
         GetCardAssetUrl(card, "small"), GetCardAssetUrl(card, "large"), Deserialize<int>(card.NationalPokedexNumbersJson),
-        Deserialize<string>(card.VariantsJson), card.SetId, card.Set.ProviderSetId, card.Set.Name,
+        Deserialize<string>(card.VariantsJson), card.SetId, card.Set.ProviderSetId, card.Set.Name, collectorReference,
         new TcgPriceDto(
             card.PriceEur,
             card.PriceUsd,
             card.PriceUpdatedAt,
-            card.CardmarketUrl,
-            card.TcgplayerUrl,
+            cardmarketUrl,
+            tcgplayerUrl,
             DeserializeDictionary(card.VariantPricesEurJson),
             DeserializeDictionary(card.VariantPricesUsdJson)),
         owned.Select(x => new TcgOwnedEntryDto(x.Id, x.Variant, x.Condition, x.Language, x.Quantity, x.Notes)).ToList(),
@@ -1049,6 +1054,7 @@ public sealed class TcgCollectionService(
         card.DetailedAt,
         card.PriceCheckedAt,
         card.LastRefreshError);
+    }
 
     private static UserCardDto ToUserCardDto(UserTcgCardEntity entry, TcgCardDto card)
     {
@@ -1141,8 +1147,11 @@ public sealed class TcgCollectionService(
         entity.CardmarketUrl = FirstNotEmpty(localized.CardmarketUrl, english.CardmarketUrl, entity.CardmarketUrl);
         entity.TcgplayerUrl = FirstNotEmpty(localized.TcgplayerUrl, english.TcgplayerUrl, entity.TcgplayerUrl);
         entity.ProviderMetadataJson = FirstNotEmpty(english.RawMetadataJson, localized.RawMetadataJson, entity.ProviderMetadataJson) ?? "{}";
-        entity.CardmarketUrl ??= $"https://www.cardmarket.com/en/Pokemon/Products/Search?searchString={Uri.EscapeDataString(localized.Name)}";
-        entity.TcgplayerUrl ??= $"https://www.tcgplayer.com/search/pokemon/product?productLineName=pokemon&q={Uri.EscapeDataString(localized.Name)}";
+        var collectorReference = GetCollectorReference(entity);
+        entity.CardmarketUrl ??= BuildMarketplaceSearchUrl("cardmarket", collectorReference)
+            ?? $"https://www.cardmarket.com/en/Pokemon/Products/Search?searchString={Uri.EscapeDataString(localized.Name)}";
+        entity.TcgplayerUrl ??= BuildMarketplaceSearchUrl("tcgplayer", collectorReference)
+            ?? $"https://www.tcgplayer.com/search/pokemon/product?productLineName=pokemon&q={Uri.EscapeDataString(localized.Name)}";
         entity.SyncedAt = DateTime.UtcNow;
         if (english.IsComplete || localized.IsComplete) entity.DetailedAt = DateTime.UtcNow;
     }
@@ -1202,6 +1211,27 @@ public sealed class TcgCollectionService(
 
     private static string? FirstNotEmpty(params string?[] values) =>
         values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+
+    private static string? GetCollectorReference(TcgCardEntity card)
+    {
+        var setCode = FirstNotEmpty(card.Set.OfficialCode, card.Set.ProviderSetId);
+        var number = card.Number.Trim();
+        return string.IsNullOrWhiteSpace(setCode) || number.Length == 0
+            ? null
+            : $"{setCode.Trim().ToUpperInvariant()} {number}";
+    }
+
+    private static string? BuildMarketplaceSearchUrl(string provider, string? collectorReference)
+    {
+        if (string.IsNullOrWhiteSpace(collectorReference)) return null;
+        var encodedReference = Uri.EscapeDataString(collectorReference);
+        return provider switch
+        {
+            "cardmarket" => $"https://www.cardmarket.com/en/Pokemon/Products/Search?searchString={encodedReference}",
+            "tcgplayer" => $"https://www.tcgplayer.com/search/pokemon/product?productLineName=pokemon&q={encodedReference}",
+            _ => null
+        };
+    }
 
     private static decimal? GetVariantPrice(string json, string variant, decimal? fallback)
     {
