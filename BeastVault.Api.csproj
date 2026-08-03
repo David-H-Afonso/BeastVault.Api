@@ -27,4 +27,7 @@
         <Content Remove="BeastVault.Api.Tests\**\*" />
         <None Remove="BeastVault.Api.Tests\**\*" />
     </ItemGroup>
+    <ItemGroup>
+        <EmbeddedResource Include="Data\SavePokedexCatalog.json" />
+    </ItemGroup>
 </Project>

@@ -125,7 +125,7 @@ public sealed class PkhexSaveParser
         if (!save.HasPokeDex)
             return result;
 
-        var validSpecies = SavePokedexRules.NationalSpecies((int)save.Version, save.Generation);
+            var validSpecies = SavePokedexRules.NationalSpecies((int)save.Version, save.Generation, save.MaxSpeciesID);
         foreach (var speciesId in validSpecies)
         {
             try

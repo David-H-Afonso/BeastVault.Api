@@ -102,6 +102,14 @@ public sealed class SaveFileService(
                 SavePokedexRules.IsVersionExclusive(save.OriginGame, x.SpeciesId)))
             .ToListAsync(cancellationToken);
 
+        // Re-filter legacy imports using the actual save revision when the raw file is available.
+        var maxSpeciesId = await TryGetMaxSpeciesIdAsync(userId, saveFileId, save.OriginalFileName, cancellationToken);
+        if (maxSpeciesId is > 0)
+        {
+            var validSpecies = SavePokedexRules.NationalSpecies(save.OriginGame, save.Generation, maxSpeciesId);
+            pokedex = pokedex.Where(entry => validSpecies.Contains(entry.SpeciesId)).ToList();
+        }
+
         var pokemonRows = await db.SavePokemonPreviews
             .AsNoTracking()
             .Where(x => x.SaveFileId == saveFileId && x.SaveFile.UserId == userId)
@@ -136,7 +144,12 @@ public sealed class SaveFileService(
             pokemonRows.Select(x => (x.Id, x.PokemonHash, x.PokemonStoredHash)),
             cancellationToken);
 
-        var pokedexDtos = pokedex.Select(x => new SavePokedexEntryDto(x.SpeciesId, x.SpeciesName, x.Seen, x.Caught)).ToList();
+        var pokedexDtos = pokedex.Select(x => new SavePokedexEntryDto(
+            x.SpeciesId,
+            x.SpeciesName,
+            x.Seen,
+            x.Caught,
+            x.IsVersionExclusive)).ToList();
         var regionalIds = SavePokedexRules.RegionalSpecies(save.OriginGame, save.Generation, save.GameName);
         var regional = pokedexDtos.Where(x => regionalIds.Contains(x.SpeciesId)).ToList();
         var national = pokedexDtos;
@@ -562,6 +575,29 @@ public sealed class SaveFileService(
 
     private static string FormatPlayTime(int hours, int minutes, int seconds) =>
         $"{hours}:{minutes:00}:{seconds:00}";
+
+    private async Task<int?> TryGetMaxSpeciesIdAsync(
+        int userId,
+        int saveFileId,
+        string fileName,
+        CancellationToken cancellationToken)
+    {
+        var rawBlob = await db.SaveFiles
+            .AsNoTracking()
+            .Where(x => x.Id == saveFileId && x.UserId == userId)
+            .Select(x => x.RawBlob)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (rawBlob is not { Length: > 0 }) return null;
+
+        try
+        {
+            return saveParser.Load(rawBlob, fileName)?.MaxSpeciesID;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     private sealed class SaveFileRow
     {
