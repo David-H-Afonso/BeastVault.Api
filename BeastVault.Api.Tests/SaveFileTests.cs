@@ -190,6 +190,49 @@ public sealed class SaveFileTests : IClassFixture<HouseholdApiFactory>
     }
 
     [Fact]
+    public async Task Detail_RebuildsPokedexFromTheRawSave()
+    {
+        var user = await RegisterAsync($"save-grouped-{Guid.NewGuid():N}");
+        var blankSave = (SAV1)BlankSaveFile.Get(GameVersion.RD, "GROUPED", LanguageID.English);
+        blankSave.Data[0x2F2D] = 0xFF;
+        blankSave.Data[0x30C1] = 0xFF;
+        var saveBytes = blankSave.Write().ToArray();
+        int saveId;
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var save = new SaveFileEntity
+            {
+                UserId = user.UserId,
+                Sha256 = Guid.NewGuid().ToString("N"),
+                FileName = "red.sav",
+                OriginalFileName = "red.sav",
+                Format = "sav",
+                Size = saveBytes.Length,
+                StoredPath = "not-used/red.sav",
+                RawBlob = saveBytes,
+                Generation = 1,
+                OriginGame = 35,
+                GameName = "Red",
+                SaveType = "1",
+                ChecksumsValid = true,
+                Trainer = new SaveTrainerEntity { TrainerName = "GROUPED", Language = "ENG" }
+            };
+            db.SaveFiles.Add(save);
+            await db.SaveChangesAsync();
+            saveId = save.Id;
+        }
+
+        var response = await SendAsync(HttpMethod.Get, $"/saves/{saveId}", user.Token);
+        response.EnsureSuccessStatusCode();
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(151, json.RootElement.GetProperty("nationalPokedex").GetProperty("total").GetInt32());
+        Assert.Equal(151, json.RootElement.GetProperty("regionalPokedex").GetProperty("total").GetInt32());
+        Assert.Equal(151, json.RootElement.GetProperty("pokedex").GetArrayLength());
+    }
+
+    [Fact]
     public async Task Upload_RejectsAnUnrecognizedFileWithoutPersistingIt()
     {
         var user = await RegisterAsync($"save-invalid-{Guid.NewGuid():N}");
