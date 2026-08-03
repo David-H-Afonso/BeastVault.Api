@@ -112,7 +112,7 @@ public sealed class SaveFileTests : IClassFixture<HouseholdApiFactory>
         using (var json = JsonDocument.Parse(await detailA.Content.ReadAsStringAsync()))
         {
             Assert.Equal("SPA", json.RootElement.GetProperty("trainer").GetProperty("language").GetString());
-            Assert.Single(json.RootElement.GetProperty("pokedex").EnumerateArray());
+            Assert.Single(json.RootElement.GetProperty("regionalPokedex").GetProperty("entries").EnumerateArray());
             Assert.Single(json.RootElement.GetProperty("pokemon").EnumerateArray());
         }
 
@@ -227,9 +227,9 @@ public sealed class SaveFileTests : IClassFixture<HouseholdApiFactory>
         var response = await SendAsync(HttpMethod.Get, $"/saves/{saveId}", user.Token);
         response.EnsureSuccessStatusCode();
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.Equal(151, json.RootElement.GetProperty("nationalPokedex").GetProperty("total").GetInt32());
+        Assert.Equal(151, json.RootElement.GetProperty("expandedPokedex").GetProperty("total").GetInt32());
         Assert.Equal(151, json.RootElement.GetProperty("regionalPokedex").GetProperty("total").GetInt32());
-        Assert.Equal(151, json.RootElement.GetProperty("pokedex").GetArrayLength());
+        Assert.Equal(151, json.RootElement.GetProperty("compatibilityPokedex").GetProperty("entries").GetArrayLength());
     }
 
     [Fact]
@@ -383,14 +383,15 @@ public sealed class SaveFileTests : IClassFixture<HouseholdApiFactory>
         response.EnsureSuccessStatusCode();
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var summary = json.RootElement.GetProperty("summary");
-        var pokedex = json.RootElement.GetProperty("pokedex");
+        var compatibility = json.RootElement.GetProperty("compatibilityPokedex");
         var pokemon = json.RootElement.GetProperty("pokemon");
 
         Assert.Equal(6, summary.GetProperty("partyCount").GetInt32());
         Assert.Equal(132, summary.GetProperty("storedPokemonCount").GetInt32());
         Assert.Equal(8, summary.GetProperty("badgeTotal").GetInt32());
-        Assert.Equal(1025, pokedex.GetArrayLength());
-        Assert.Equal(1025, pokedex[1024].GetProperty("speciesId").GetInt32());
+        Assert.Equal(649, compatibility.GetProperty("total").GetInt32());
+        Assert.Equal(649, compatibility.GetProperty("entries").GetArrayLength());
+        Assert.Equal(649, compatibility.GetProperty("entries")[648].GetProperty("speciesId").GetInt32());
         Assert.Equal(138, pokemon.GetArrayLength());
         Assert.Equal("party", pokemon[0].GetProperty("location").GetString());
         Assert.Equal("box", pokemon[137].GetProperty("location").GetString());

@@ -162,13 +162,15 @@ public sealed class SaveFileService(
             x.Caught,
             x.IsVersionExclusive)).ToList();
         var regionalIds = SavePokedexRules.RegionalSpecies(save.OriginGame, save.Generation, save.GameName);
+        var expandedIds = SavePokedexRules.ExpandedSpecies(save.OriginGame, save.Generation);
+        var compatibilityIds = SavePokedexRules.CompatibilitySpecies(save.OriginGame, save.Generation);
         var regional = pokedexDtos.Where(x => regionalIds.Contains(x.SpeciesId)).ToList();
-        var national = pokedexDtos;
+        var expanded = pokedexDtos.Where(x => expandedIds.Contains(x.SpeciesId)).ToList();
+        var compatibility = pokedexDtos.Where(x => compatibilityIds.Contains(x.SpeciesId)).ToList();
 
         return new SaveFileDetailDto(
             summary,
             trainer,
-            national,
             pokemonRows.Select(x =>
             {
                 var existingPokemonId = existing.GetValueOrDefault(x.Id);
@@ -194,7 +196,8 @@ public sealed class SaveFileService(
                     existingPokemonId > 0 ? existingPokemonId : null);
             }).ToList(),
             ToPokedexProgress(regional),
-            ToPokedexProgress(national));
+            ToPokedexProgress(expanded),
+            ToPokedexProgress(compatibility));
     }
 
     public async Task<bool> UpdateMetadataAsync(

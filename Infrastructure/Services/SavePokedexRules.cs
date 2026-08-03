@@ -34,22 +34,31 @@ public static class SavePokedexRules
         return EmptySpecies;
     }
 
-    public static IReadOnlySet<int> NationalSpecies(int originGame, int generation, int? maxSpeciesId = null)
+    public static IReadOnlySet<int> ExpandedSpecies(int originGame, int generation, int? maxSpeciesId = null)
     {
-        if (TryGetGameDefinition(originGame, out var definition) &&
-            TryGetRanges(Catalog.Value.NationalDexes, definition.NationalDex, out var ranges))
+        if (TryGetGameDefinition(originGame, out var definition))
         {
-            var configuredMax = ranges.Select(range => range.Length > 1 ? range[1] : 0).DefaultIfEmpty(0).Max();
-            var saveMax = maxSpeciesId is > 0 ? maxSpeciesId.Value : configuredMax;
-            var species = ExpandRanges(ranges, Math.Min(configuredMax, saveMax));
-            return species.Where(id => IsSpeciesInGame(originGame, id)).ToHashSet();
+            var ranges = GetExpandedRanges(definition);
+            if (ranges.Count > 0)
+            {
+                var configuredMax = ranges.Select(range => range.Length > 1 ? range[1] : 0).DefaultIfEmpty(0).Max();
+                var saveMax = maxSpeciesId is > 0 ? maxSpeciesId.Value : configuredMax;
+                var species = ExpandRanges(ranges, Math.Min(configuredMax, saveMax));
+                return species.Where(id => IsSpeciesInGame(originGame, id)).ToHashSet();
+            }
         }
 
-        var fallbackMax = NationalMax(generation);
-        if (maxSpeciesId is > 0) fallbackMax = Math.Min(fallbackMax, maxSpeciesId.Value);
-        return fallbackMax <= 0
+        return CompatibilitySpecies(originGame, generation, maxSpeciesId);
+    }
+
+    public static IReadOnlySet<int> CompatibilitySpecies(int originGame, int generation, int? maxSpeciesId = null)
+    {
+        var table = GetPersonalTable((GameVersion)originGame);
+        var configuredMax = table?.MaxSpeciesID ?? NationalMax(generation);
+        var saveMax = maxSpeciesId is > 0 ? Math.Min(configuredMax, maxSpeciesId.Value) : configuredMax;
+        return saveMax <= 0
             ? EmptySpecies
-            : Enumerable.Range(1, fallbackMax).Where(id => IsSpeciesInGame(originGame, id)).ToHashSet();
+            : Enumerable.Range(1, saveMax).Where(id => IsSpeciesInGame(originGame, id)).ToHashSet();
     }
 
     public static bool IsSpeciesInGame(int originGame, int speciesId)
@@ -73,6 +82,21 @@ public static class SavePokedexRules
         string name,
         out List<int[]> ranges) =>
         source.TryGetValue(name, out ranges!);
+
+    private static List<int[]> GetExpandedRanges(GamePokedexDefinition definition)
+    {
+        if (!string.IsNullOrWhiteSpace(definition.ExpandedDex) &&
+            Catalog.Value.ExpandedDexGroups.TryGetValue(definition.ExpandedDex, out var group))
+        {
+            return group
+                .SelectMany(name => Catalog.Value.RegionalDexes.TryGetValue(name, out var ranges) ? ranges : [])
+                .ToList();
+        }
+
+        return TryGetRanges(Catalog.Value.NationalDexes, definition.NationalDex, out var nationalRanges)
+            ? nationalRanges
+            : [];
+    }
 
     private static IReadOnlySet<int> GetVersionExclusiveSpecies(int originGame) =>
         Catalog.Value.VersionExclusives.TryGetValue(
@@ -160,6 +184,7 @@ public static class SavePokedexRules
     private sealed class PokedexCatalog
     {
         public Dictionary<string, List<int[]>> RegionalDexes { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, List<string>> ExpandedDexGroups { get; init; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, List<int[]>> NationalDexes { get; init; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, GamePokedexDefinition> Games { get; init; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, HashSet<int>> VersionExclusives { get; init; } = new(StringComparer.OrdinalIgnoreCase);
@@ -168,6 +193,7 @@ public static class SavePokedexRules
     private sealed class GamePokedexDefinition
     {
         public string RegionalDex { get; init; } = string.Empty;
+        public string ExpandedDex { get; init; } = string.Empty;
         public string NationalDex { get; init; } = string.Empty;
     }
 }

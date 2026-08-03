@@ -78,10 +78,10 @@ public sealed record SavePokemonPreviewDto(
 public sealed record SaveFileDetailDto(
     SaveFileSummaryDto Summary,
     SaveTrainerDto Trainer,
-    IReadOnlyList<SavePokedexEntryDto> Pokedex,
     IReadOnlyList<SavePokemonPreviewDto> Pokemon,
     SavePokedexProgressDto? RegionalPokedex = null,
-    SavePokedexProgressDto? NationalPokedex = null);
+    SavePokedexProgressDto? ExpandedPokedex = null,
+    SavePokedexProgressDto? CompatibilityPokedex = null);
 
 public sealed record SaveFileUploadResultDto(
     string FileName,

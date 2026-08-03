@@ -21,9 +21,9 @@ public sealed class SavePokedexRulesTests
     }
 
     [Fact]
-    public void NationalSpecies_RespectsTheSaveSpeciesLimit()
+    public void CompatibilitySpecies_RespectsTheSaveSpeciesLimit()
     {
-        var species = SavePokedexRules.NationalSpecies(50, 9, 1010);
+        var species = SavePokedexRules.CompatibilitySpecies(50, 9, 1010);
 
         Assert.Equal(1010, species.Max());
         Assert.DoesNotContain(1011, species);
@@ -33,9 +33,9 @@ public sealed class SavePokedexRulesTests
     public void GroupedSaveVersionsUseTheSameDexAsTheirConcreteGames()
     {
         var heartGoldRegional = SavePokedexRules.RegionalSpecies(65, 4, string.Empty);
-        var heartGoldNational = SavePokedexRules.NationalSpecies(65, 4, 493);
+        var heartGoldNational = SavePokedexRules.ExpandedSpecies(65, 4, 493);
         var goldRegional = SavePokedexRules.RegionalSpecies(55, 2, string.Empty);
-        var goldNational = SavePokedexRules.NationalSpecies(55, 2, 251);
+        var goldNational = SavePokedexRules.ExpandedSpecies(55, 2, 251);
 
         Assert.Equal(256, heartGoldRegional.Count);
         Assert.Contains(179, heartGoldNational);
@@ -43,6 +43,20 @@ public sealed class SavePokedexRulesTests
         Assert.Equal(251, goldRegional.Count);
         Assert.Contains(179, goldNational);
         Assert.Equal(251, goldNational.Max());
+    }
+
+    [Fact]
+    public void ScarletSeparatesRegionalDlcAndCompatibilitySets()
+    {
+        var regional = SavePokedexRules.RegionalSpecies(50, 9, "Scarlet");
+        var expanded = SavePokedexRules.ExpandedSpecies(50, 9);
+        var compatibility = SavePokedexRules.CompatibilitySpecies(50, 9);
+
+        Assert.Equal(400, regional.Count);
+        Assert.Equal(664, expanded.Count);
+        Assert.Equal(733, compatibility.Count);
+        Assert.True(compatibility.Count < SavePokedexRules.NationalMax(9));
+        Assert.NotEmpty(compatibility.Except(expanded));
     }
 
     [Fact]
