@@ -205,6 +205,17 @@ public static class PokemonGameInfoService
             35 or 36 or 37 or 38 => 1,  // VC Gen1
             39 or 40 or 41 => 2,        // VC Gen2
 
+            // PKHeX grouped save versions
+            53 or 54 => 1,               // Red/Blue/Yellow groups
+            55 or 56 => 2,               // Gold/Silver/Crystal groups
+            57 or 58 or 59 or 60 or 61 or 62 => 3,
+            63 or 64 or 65 => 4,
+            66 or 67 => 5,
+            68 or 69 or 70 => 6,
+            71 or 72 or 73 => 7,
+            74 or 75 => 8,
+            76 => 9,
+
             // Pokemon GO
             34 => 7,
 

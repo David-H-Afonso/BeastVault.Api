@@ -102,12 +102,16 @@ public sealed class SaveFileService(
                 SavePokedexRules.IsVersionExclusive(save.OriginGame, x.SpeciesId)))
             .ToListAsync(cancellationToken);
 
-        // Re-filter legacy imports using the actual save revision when the raw file is available.
-        var maxSpeciesId = await TryGetMaxSpeciesIdAsync(userId, saveFileId, save.OriginalFileName, cancellationToken);
-        if (maxSpeciesId is > 0)
+        // Re-read the raw save so older imports also get the correct grouped game rules and revision.
+        var rawPokedex = await TryReadPokedexFromRawAsync(
+            userId,
+            saveFileId,
+            save.OriginalFileName,
+            save.OriginGame,
+            cancellationToken);
+        if (rawPokedex is not null)
         {
-            var validSpecies = SavePokedexRules.NationalSpecies(save.OriginGame, save.Generation, maxSpeciesId);
-            pokedex = pokedex.Where(entry => validSpecies.Contains(entry.SpeciesId)).ToList();
+            pokedex = rawPokedex;
         }
 
         var pokemonRows = await db.SavePokemonPreviews
@@ -576,27 +580,31 @@ public sealed class SaveFileService(
     private static string FormatPlayTime(int hours, int minutes, int seconds) =>
         $"{hours}:{minutes:00}:{seconds:00}";
 
-    private async Task<int?> TryGetMaxSpeciesIdAsync(
+    private async Task<List<SavePokedexEntryDto>?> TryReadPokedexFromRawAsync(
         int userId,
         int saveFileId,
         string fileName,
+        int originGame,
         CancellationToken cancellationToken)
     {
-        var rawBlob = await db.SaveFiles
+        var save = await db.SaveFiles
             .AsNoTracking()
             .Where(x => x.Id == saveFileId && x.UserId == userId)
-            .Select(x => x.RawBlob)
-            .FirstOrDefaultAsync(cancellationToken);
-        if (rawBlob is not { Length: > 0 }) return null;
+            .Select(x => new { x.RawBlob, x.StoredPath })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (save is null || !TryReadSaveBytes(userId, save.RawBlob, save.StoredPath, out var bytes)) return null;
 
-        try
-        {
-            return saveParser.Load(rawBlob, fileName)?.MaxSpeciesID;
-        }
-        catch
-        {
-            return null;
-        }
+        var parsed = saveParser.Load(bytes, fileName);
+        if (parsed is null) return null;
+
+        return PkhexSaveParser.ReadPokedex(parsed)
+            .Select(entry => new SavePokedexEntryDto(
+                entry.SpeciesId,
+                entry.SpeciesName,
+                entry.Seen,
+                entry.Caught,
+                SavePokedexRules.IsVersionExclusive(originGame, entry.SpeciesId)))
+            .ToList();
     }
 
     private sealed class SaveFileRow

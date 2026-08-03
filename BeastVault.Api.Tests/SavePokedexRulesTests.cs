@@ -30,6 +30,22 @@ public sealed class SavePokedexRulesTests
     }
 
     [Fact]
+    public void GroupedSaveVersionsUseTheSameDexAsTheirConcreteGames()
+    {
+        var heartGoldRegional = SavePokedexRules.RegionalSpecies(65, 4, string.Empty);
+        var heartGoldNational = SavePokedexRules.NationalSpecies(65, 4, 493);
+        var goldRegional = SavePokedexRules.RegionalSpecies(55, 2, string.Empty);
+        var goldNational = SavePokedexRules.NationalSpecies(55, 2, 251);
+
+        Assert.Equal(256, heartGoldRegional.Count);
+        Assert.Contains(179, heartGoldNational);
+        Assert.Equal(493, heartGoldNational.Max());
+        Assert.Equal(251, goldRegional.Count);
+        Assert.Contains(179, goldNational);
+        Assert.Equal(251, goldNational.Max());
+    }
+
+    [Fact]
     public void VersionExclusiveSpecies_IsReadFromTheCatalog()
     {
         Assert.True(SavePokedexRules.IsVersionExclusive(50, 1007));

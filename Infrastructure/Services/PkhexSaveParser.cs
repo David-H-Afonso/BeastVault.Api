@@ -119,13 +119,13 @@ public sealed class PkhexSaveParser
         }
     }
 
-    private static List<SavePokedexEntryEntity> ReadPokedex(SaveFile save)
+    public static List<SavePokedexEntryEntity> ReadPokedex(SaveFile save)
     {
         var result = new List<SavePokedexEntryEntity>();
         if (!save.HasPokeDex)
             return result;
 
-            var validSpecies = SavePokedexRules.NationalSpecies((int)save.Version, save.Generation, save.MaxSpeciesID);
+        var validSpecies = SavePokedexRules.NationalSpecies((int)save.Version, save.Generation, save.MaxSpeciesID);
         foreach (var speciesId in validSpecies)
         {
             try
