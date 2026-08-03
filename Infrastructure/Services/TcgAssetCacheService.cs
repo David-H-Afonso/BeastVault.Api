@@ -21,8 +21,15 @@ public sealed class TcgAssetCacheService(
     private static readonly HashSet<string> AllowedHosts = new(StringComparer.OrdinalIgnoreCase)
     {
         "assets.tcgdex.net",
-        "images.pokemontcg.io"
+        "images.pokemontcg.io",
+        "product-images.tcgplayer.com"
     };
+    private static readonly IReadOnlyDictionary<string, string> SupplementalCardImages =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            // TCGdex has metadata for MEE 005 but no card artwork yet.
+            ["mee-005"] = "https://product-images.tcgplayer.com/fit-in/1000x1000/656267.jpg"
+        };
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> AssetLocks = new(StringComparer.Ordinal);
     private static readonly ConcurrentDictionary<string, Lazy<Task<TcgProviderSet?>>> ProviderSetCache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly SemaphoreSlim ProviderSetLookupGate = new(2, 2);
@@ -196,13 +203,16 @@ public sealed class TcgAssetCacheService(
         var result = new List<string>();
 
         if (card.Provider.Equals("tcgdex", StringComparison.OrdinalIgnoreCase) &&
-            !string.IsNullOrWhiteSpace(card.Set.SeriesId) &&
             !string.IsNullOrWhiteSpace(card.Set.ProviderSetId) &&
             !string.IsNullOrWhiteSpace(card.Number))
         {
             var localId = card.Number.Split('/', 2)[0].Trim();
-            foreach (var language in new[] { "en", "es", "univ" })
-                result.Add(BuildTcgDexCardUrl(language, card.Set.SeriesId, card.Set.ProviderSetId, localId, primaryQuality));
+            if (SupplementalCardImages.TryGetValue($"{card.Set.ProviderSetId}-{localId}", out var supplementalSource))
+                result.Add(supplementalSource);
+
+            if (!string.IsNullOrWhiteSpace(card.Set.SeriesId))
+                foreach (var language in new[] { "en", "es", "univ" })
+                    result.Add(BuildTcgDexCardUrl(language, card.Set.SeriesId, card.Set.ProviderSetId, localId, primaryQuality));
 
             result.Add(BuildPokemonTcgIoCardUrl(card.Set.ProviderSetId, NormalizePokemonTcgIoLocalId(localId), primaryQuality));
             if (!string.IsNullOrWhiteSpace(primarySource)) result.Add(primarySource);

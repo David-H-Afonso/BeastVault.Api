@@ -274,6 +274,24 @@ public sealed class TcgProviderTests
         Assert.Contains("https://images.pokemontcg.io/sve/12.png", candidates);
     }
 
+    [Fact]
+    public void TcgAssetCandidates_UseSupplementalImageWhenTcgDexHasNoArtwork()
+    {
+        var entity = new TcgCardEntity
+        {
+            Provider = "tcgdex",
+            ProviderCardId = "mee-005",
+            Number = "005",
+            Set = new TcgSetEntity { ProviderSetId = "mee", SeriesId = "me" }
+        };
+        var buildCandidates = typeof(TcgAssetCacheService).GetMethod(
+            "BuildCardCandidates", BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        var candidates = (IReadOnlyList<string>)buildCandidates.Invoke(null, [entity, "large"])!;
+
+        Assert.Contains("https://product-images.tcgplayer.com/fit-in/1000x1000/656267.jpg", candidates);
+    }
+
     [Theory]
     [InlineData("216", "216")]
     [InlineData("011", "11")]
