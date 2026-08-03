@@ -109,9 +109,16 @@ public sealed class SaveFileService(
             save.OriginalFileName,
             save.OriginGame,
             cancellationToken);
+        var summary = ToSummary(save);
+        var trainer = ToTrainer(save);
         if (rawPokedex is not null)
         {
             pokedex = rawPokedex;
+            var regionalIdsFromRaw = SavePokedexRules.RegionalSpecies(save.OriginGame, save.Generation, save.GameName);
+            var dexSeen = pokedex.Count(entry => entry.Seen && regionalIdsFromRaw.Contains(entry.SpeciesId));
+            var dexCaught = pokedex.Count(entry => entry.Caught && regionalIdsFromRaw.Contains(entry.SpeciesId));
+            summary = summary with { DexSeen = dexSeen, DexCaught = dexCaught };
+            trainer = trainer with { DexSeen = dexSeen, DexCaught = dexCaught };
         }
 
         var pokemonRows = await db.SavePokemonPreviews
@@ -159,8 +166,8 @@ public sealed class SaveFileService(
         var national = pokedexDtos;
 
         return new SaveFileDetailDto(
-            ToSummary(save),
-            ToTrainer(save),
+            summary,
+            trainer,
             national,
             pokemonRows.Select(x =>
             {
