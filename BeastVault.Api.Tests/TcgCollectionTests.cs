@@ -226,6 +226,58 @@ public sealed class TcgCollectionTests : IClassFixture<HouseholdApiFactory>
     }
 
     [Fact]
+    public async Task BulkResolveAndAdd_PreservesLineErrorsAndAddsValidRows()
+    {
+        var user = await RegisterAsync(Unique("tcg-bulk"));
+        var (firstCardId, secondCardId) = await SeedBulkCatalogAsync();
+
+        var resolvedResponse = await SendAsync(
+            HttpMethod.Post,
+            "/tcg/cards/resolve-bulk",
+            user.Token,
+            JsonContent.Create(new { identifiers = new[] { "BULK 001 x2", "BULK 002", "not-a-card" } }));
+        resolvedResponse.EnsureSuccessStatusCode();
+        using (var json = JsonDocument.Parse(await resolvedResponse.Content.ReadAsStringAsync()))
+        {
+            Assert.Equal(3, json.RootElement.GetProperty("requested").GetInt32());
+            Assert.Equal(2, json.RootElement.GetProperty("resolved").GetInt32());
+            Assert.Equal(1, json.RootElement.GetProperty("failed").GetInt32());
+            var items = json.RootElement.GetProperty("items").EnumerateArray().ToList();
+            Assert.Equal(2, items[0].GetProperty("quantity").GetInt32());
+            Assert.Equal(firstCardId, items[0].GetProperty("card").GetProperty("id").GetInt32());
+            Assert.Equal(secondCardId, items[1].GetProperty("card").GetProperty("id").GetInt32());
+            Assert.False(items[2].GetProperty("success").GetBoolean());
+        }
+
+        var addedResponse = await SendAsync(
+            HttpMethod.Post,
+            "/tcg/collection/bulk",
+            user.Token,
+            JsonContent.Create(new
+            {
+                items = new object[]
+                {
+                    new { index = 0, cardId = firstCardId, variant = "normal", condition = "NM", language = "ES", quantity = 2, notes = "Binder" },
+                    new { index = 1, cardId = secondCardId, variant = "reverse", condition = "LP", language = "EN", quantity = 1, notes = (string?)null },
+                    new { index = 2, cardId = -1, variant = "normal", condition = "NM", language = "ES", quantity = 1, notes = (string?)null }
+                }
+            }));
+        addedResponse.EnsureSuccessStatusCode();
+        using (var json = JsonDocument.Parse(await addedResponse.Content.ReadAsStringAsync()))
+        {
+            Assert.Equal(3, json.RootElement.GetProperty("requested").GetInt32());
+            Assert.Equal(2, json.RootElement.GetProperty("added").GetInt32());
+            Assert.Equal(1, json.RootElement.GetProperty("failed").GetInt32());
+        }
+
+        var collection = await SendAsync(HttpMethod.Get, "/tcg/collection", user.Token);
+        collection.EnsureSuccessStatusCode();
+        using var collectionJson = JsonDocument.Parse(await collection.Content.ReadAsStringAsync());
+        Assert.Equal(2, collectionJson.RootElement.GetProperty("totalCount").GetInt32());
+        Assert.Equal(3, collectionJson.RootElement.GetProperty("items").EnumerateArray().Sum(x => x.GetProperty("totalCopies").GetInt32()));
+    }
+
+    [Fact]
     public async Task CardDto_UsesLocalAssetUrlAndDisallowedSourceReturnsNotFound()
     {
         var user = await RegisterAsync(Unique("tcg-assets"));
@@ -303,6 +355,32 @@ public sealed class TcgCollectionTests : IClassFixture<HouseholdApiFactory>
         db.TcgCards.AddRange(charmander, reshiram);
         await db.SaveChangesAsync();
         return (set.Id, charmander.Id, reshiram.Id);
+    }
+
+    private async Task<(int FirstCardId, int SecondCardId)> SeedBulkCatalogAsync()
+    {
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var set = new TcgSetEntity
+        {
+            ProviderSetId = Unique("bulk-set"),
+            OfficialCode = "BULK",
+            Name = "Bulk Test Set",
+            NameEn = "Bulk Test Set",
+            SeriesId = "bulk-series",
+            PrintedTotal = 2,
+            Total = 2,
+            SyncedAt = DateTime.UtcNow,
+            CardsSyncedAt = DateTime.UtcNow
+        };
+        db.TcgSets.Add(set);
+        await db.SaveChangesAsync();
+
+        var first = NewCard(set.Id, $"{set.ProviderSetId}-001", "Bulk One", "001", 1, 1m, 1m);
+        var second = NewCard(set.Id, $"{set.ProviderSetId}-002", "Bulk Two", "002", 2, 2m, 2m);
+        db.TcgCards.AddRange(first, second);
+        await db.SaveChangesAsync();
+        return (first.Id, second.Id);
     }
 
     private static TcgCardEntity NewCard(

@@ -197,6 +197,33 @@ public static class TcgCollectionEndpoints
             .Produces<TcgCardPageDto>()
             .Produces(503);
 
+        group.MapPost("/cards/resolve-bulk", async (
+                TcgBulkResolveRequest request,
+                TcgCollectionService service,
+                HttpContext context,
+                CancellationToken cancellationToken) =>
+            {
+                var userId = context.GetUserId();
+                if (userId is null) return Results.Unauthorized();
+                try
+                {
+                    return Results.Ok(await service.ResolveBulkAsync(userId.Value, request, cancellationToken));
+                }
+                catch (HttpRequestException)
+                {
+                    return Results.Problem("Bulk card resolution is temporarily unavailable.", statusCode: 503);
+                }
+                catch (ArgumentException exception)
+                {
+                    return Results.BadRequest(exception.Message);
+                }
+            })
+            .WithName("ResolveTcgCardsBulk")
+            .RequireRateLimiting("tcg-provider")
+            .Produces<TcgBulkResolveResultDto>()
+            .Produces(400)
+            .Produces(503);
+
         group.MapGet("/cards/{id:int}", async (
                 int id,
                 TcgCollectionService service,
@@ -328,6 +355,27 @@ public static class TcgCollectionEndpoints
             .Produces<UserCardDto>()
             .Produces(400)
             .Produces(404);
+
+        group.MapPost("/collection/bulk", async (
+                AddTcgCollectionBulkRequest request,
+                TcgCollectionService service,
+                HttpContext context,
+                CancellationToken cancellationToken) =>
+            {
+                var userId = context.GetUserId();
+                if (userId is null) return Results.Unauthorized();
+                try
+                {
+                    return Results.Ok(await service.AddBulkAsync(userId.Value, request, cancellationToken));
+                }
+                catch (ArgumentException exception)
+                {
+                    return Results.BadRequest(exception.Message);
+                }
+            })
+            .WithName("AddTcgCollectionBulk")
+            .Produces<TcgBulkAddResultDto>()
+            .Produces(400);
 
         group.MapPatch("/collection/{id:int}", async (
                 int id,

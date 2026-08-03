@@ -19,9 +19,13 @@ public sealed class TcgCollectionService(
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private const int MaxBatchCards = 10;
+    private const int MaxBulkItems = 500;
     private static readonly Regex CollectorReferencePattern = new(
         @"^\s*(?:(?<code>[A-Za-z][A-Za-z0-9-]{0,11})\s+)?(?<number>\d+)(?:\s*/\s*(?<total>\d+))?\s*$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex BulkCollectorReferencePattern = new(
+        @"^\s*(?<reference>(?:(?:[A-Za-z][A-Za-z0-9-]{0,11}\s+)?\d+(?:\s*/\s*\d+)?)\s*)(?:(?:x|\*)\s*(?<quantity>\d+))?\s*$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
     private static readonly SemaphoreSlim SetsSyncLock = new(1, 1);
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> SetSyncLocks = new(StringComparer.OrdinalIgnoreCase);
     private static readonly (string Name, int First, int Last)[] Regions =
@@ -276,6 +280,218 @@ public sealed class TcgCollectionService(
         {
             return local;
         }
+    }
+
+    public async Task<TcgBulkResolveResultDto> ResolveBulkAsync(
+        int userId,
+        TcgBulkResolveRequest request,
+        CancellationToken cancellationToken)
+    {
+        var inputs = (request.Identifiers ?? [])
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .ToList();
+        if (inputs.Count == 0) throw new ArgumentException("At least one card identifier is required.");
+
+        var requested = inputs.Count;
+        var truncated = inputs.Count > MaxBulkItems;
+        if (truncated) inputs = inputs.Take(MaxBulkItems).ToList();
+
+        await EnsureSetsAsync(cancellationToken);
+        var setCache = new Dictionary<string, TcgSetEntity?>(StringComparer.OrdinalIgnoreCase);
+        var setErrors = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var cardCache = new Dictionary<string, TcgCardEntity?>(StringComparer.OrdinalIgnoreCase);
+        var results = new List<TcgBulkResolveItemDto>(inputs.Count);
+
+        for (var index = 0; index < inputs.Count; index++)
+        {
+            var input = inputs[index];
+            if (!TryParseBulkCollectorReference(input, out var collector, out var quantity, out var parseError))
+            {
+                results.Add(new TcgBulkResolveItemDto(index, input, 1, false, parseError, null));
+                continue;
+            }
+
+            if (collector.OfficialCode is null)
+            {
+                results.Add(new TcgBulkResolveItemDto(index, input, quantity, false,
+                    "Include the set code, for example SVP 210.", null));
+                continue;
+            }
+
+            var officialCode = collector.OfficialCode;
+            try
+            {
+                if (!setCache.ContainsKey(officialCode) && !setErrors.ContainsKey(officialCode))
+                {
+                    try
+                    {
+                        setCache[officialCode] = await ResolveOfficialSetAsync(officialCode, cancellationToken);
+                    }
+                    catch (HttpRequestException exception)
+                    {
+                        setErrors[officialCode] = ProviderError("TCGdex", exception);
+                    }
+                }
+
+                if (setErrors.TryGetValue(officialCode, out var setError))
+                {
+                    results.Add(new TcgBulkResolveItemDto(index, input, quantity, false, setError, null));
+                    continue;
+                }
+
+                var set = setCache[officialCode];
+                if (set is null)
+                {
+                    results.Add(new TcgBulkResolveItemDto(index, input, quantity, false,
+                        $"Set {officialCode} was not found.", null));
+                    continue;
+                }
+
+                await ValidateCollectorTotalAsync(set, collector, cancellationToken);
+                var cardKey = $"{set.Id}:{collector.NumericValue}";
+                if (!cardCache.TryGetValue(cardKey, out var card))
+                {
+                    card = await FindBulkCardAsync(set, collector, cancellationToken);
+                    cardCache[cardKey] = card;
+                }
+
+                if (card is null)
+                {
+                    results.Add(new TcgBulkResolveItemDto(index, input, quantity, false,
+                        $"Card {officialCode} {collector.LocalId} was not found in the catalog.", null));
+                    continue;
+                }
+
+                results.Add(new TcgBulkResolveItemDto(index, input, quantity, true, null,
+                    await ToCardDtoAsync(userId, card, cancellationToken)));
+            }
+            catch (HttpRequestException exception)
+            {
+                results.Add(new TcgBulkResolveItemDto(index, input, quantity, false,
+                    ProviderError("TCGdex", exception), null));
+            }
+            catch (ArgumentException exception)
+            {
+                results.Add(new TcgBulkResolveItemDto(index, input, quantity, false, exception.Message, null));
+            }
+        }
+
+        var resolved = results.Count(x => x.Success);
+        return new TcgBulkResolveResultDto(results, requested, resolved, results.Count - resolved, truncated);
+    }
+
+    public async Task<TcgBulkAddResultDto> AddBulkAsync(
+        int userId,
+        AddTcgCollectionBulkRequest request,
+        CancellationToken cancellationToken)
+    {
+        var items = request.Items ?? [];
+        if (items.Count == 0) throw new ArgumentException("At least one card is required.");
+        if (items.Count > MaxBulkItems) throw new ArgumentException($"A maximum of {MaxBulkItems} cards can be added at once.");
+
+        var results = new TcgBulkAddItemDto[items.Count];
+        var cardIds = items.Select(x => x.CardId).Where(x => x > 0).Distinct().ToList();
+        var cards = await db.TcgCards.Include(x => x.Set)
+            .Where(x => cardIds.Contains(x.Id))
+            .ToListAsync(cancellationToken);
+        var cardsById = cards.ToDictionary(x => x.Id);
+        var valid = new List<BulkAddValue>();
+
+        for (var position = 0; position < items.Count; position++)
+        {
+            var item = items[position];
+            try
+            {
+                if (!cardsById.TryGetValue(item.CardId, out var card))
+                    throw new KeyNotFoundException("Card not found.");
+                ValidateEntry(item.Variant, item.Condition, item.Language, item.Quantity);
+                var variant = NormalizeToken(item.Variant, 80);
+                var condition = NormalizeToken(item.Condition, 30).ToUpperInvariant();
+                var language = NormalizeToken(item.Language, 20).ToUpperInvariant();
+                var notes = NormalizeNotes(item.Notes);
+                valid.Add(new BulkAddValue(position, item, card, variant, condition, language, notes));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                results[position] = new TcgBulkAddItemDto(item.Index, item.CardId, false, exception.Message, null);
+            }
+            catch (ArgumentException exception)
+            {
+                results[position] = new TcgBulkAddItemDto(item.Index, item.CardId, false, exception.Message, null);
+            }
+        }
+
+        var keys = valid
+            .Select(x => new CollectionEntryKey(x.Card.Id, x.Variant, x.Condition, x.Language))
+            .Distinct()
+            .ToList();
+        var existing = keys.Count == 0
+            ? []
+            : await db.UserTcgCards
+                .Where(x => x.UserId == userId && cardIds.Contains(x.CardId))
+                .ToListAsync(cancellationToken);
+        var existingByKey = existing.ToDictionary(
+            x => new CollectionEntryKey(x.CardId, x.Variant, x.Condition, x.Language));
+        var entriesByKey = new Dictionary<CollectionEntryKey, UserTcgCardEntity>();
+
+        foreach (var group in valid.GroupBy(x => new CollectionEntryKey(x.Card.Id, x.Variant, x.Condition, x.Language)))
+        {
+            var first = group.First();
+            if (!existingByKey.TryGetValue(group.Key, out var entry))
+            {
+                entry = new UserTcgCardEntity
+                {
+                    UserId = userId,
+                    CardId = first.Card.Id,
+                    Variant = first.Variant,
+                    Condition = first.Condition,
+                    Language = first.Language,
+                    Quantity = 0,
+                    Notes = null,
+                    Card = first.Card
+                };
+                db.UserTcgCards.Add(entry);
+                existingByKey[group.Key] = entry;
+            }
+
+            entry.Quantity = Math.Min(9999, entry.Quantity + group.Sum(x => x.Request.Quantity));
+            var latestNotes = group.Select(x => x.Notes).LastOrDefault(x => x is not null);
+            if (latestNotes is not null) entry.Notes = latestNotes;
+            entry.UpdatedAt = DateTime.UtcNow;
+            entry.Card = first.Card;
+            entriesByKey[group.Key] = entry;
+        }
+
+        if (entriesByKey.Count > 0) await db.SaveChangesAsync(cancellationToken);
+
+        var affectedCardIds = entriesByKey.Keys.Select(x => x.CardId).Distinct().ToList();
+        var savedEntries = affectedCardIds.Count == 0
+            ? []
+            : await db.UserTcgCards.AsNoTracking()
+                .Where(x => x.UserId == userId && affectedCardIds.Contains(x.CardId))
+                .Include(x => x.Card).ThenInclude(x => x.Set)
+                .ToListAsync(cancellationToken);
+        var ownedByCard = savedEntries.GroupBy(x => x.CardId)
+            .ToDictionary(x => x.Key, x => (IReadOnlyList<UserTcgCardEntity>)x.ToList());
+        var savedByKey = savedEntries.ToDictionary(
+            x => new CollectionEntryKey(x.CardId, x.Variant, x.Condition, x.Language));
+
+        foreach (var item in valid)
+        {
+            var key = new CollectionEntryKey(item.Card.Id, item.Variant, item.Condition, item.Language);
+            var entry = savedByKey[key];
+            results[item.Position] = new TcgBulkAddItemDto(
+                item.Request.Index,
+                item.Card.Id,
+                true,
+                null,
+                ToUserCardDto(entry, ToCardDto(entry.Card, ownedByCard[entry.CardId])));
+        }
+
+        var resultItems = results.ToList();
+        var added = resultItems.Count(x => x.Success);
+        return new TcgBulkAddResultDto(resultItems, items.Count, added, items.Count - added);
     }
 
     public async Task<TcgCardDto?> GetCardAsync(int userId, int cardId, bool refresh, CancellationToken cancellationToken)
@@ -899,6 +1115,56 @@ public sealed class TcgCollectionService(
         }
     }
 
+    private async Task<TcgCardEntity?> FindBulkCardAsync(
+        TcgSetEntity set,
+        CollectorReference collector,
+        CancellationToken cancellationToken)
+    {
+        var numericText = collector.NumericValue.ToString();
+        var localCards = await db.TcgCards.AsNoTracking().Include(x => x.Set)
+            .Where(x => x.SetId == set.Id && x.Number.Contains(numericText))
+            .ToListAsync(cancellationToken);
+        var local = localCards.FirstOrDefault(x => CollectorNumbersEqual(x.Number, collector.LocalId));
+        if (local is not null) return local;
+
+        var english = await tcgDex.GetSetCardAsync(set.ProviderSetId, collector.LocalId, "en", cancellationToken);
+        TcgProviderCard? spanish = null;
+        try { spanish = await tcgDex.GetSetCardAsync(set.ProviderSetId, collector.LocalId, "es", cancellationToken); }
+        catch (HttpRequestException) { }
+        if (english is null && spanish is null) return null;
+
+        await UpsertCardsAsync(
+            english is null ? [] : [english],
+            spanish is null ? [] : [spanish],
+            cancellationToken);
+
+        var providerCardId = english?.Id ?? spanish!.Id;
+        return await db.TcgCards.AsNoTracking().Include(x => x.Set)
+            .SingleOrDefaultAsync(x => x.ProviderCardId == providerCardId, cancellationToken);
+    }
+
+    private async Task ValidateCollectorTotalAsync(
+        TcgSetEntity set,
+        CollectorReference collector,
+        CancellationToken cancellationToken)
+    {
+        if (!collector.PrintedTotal.HasValue) return;
+        if (set.PrintedTotal <= 0)
+        {
+            var providerSet = await tcgDex.GetSetAsync(set.ProviderSetId, "en", cancellationToken);
+            if (providerSet is not null)
+            {
+                ApplySet(set, providerSet, null);
+                await db.SaveChangesAsync(cancellationToken);
+            }
+        }
+
+        if (set.PrintedTotal <= 0)
+            throw new ArgumentException($"The printed total for {set.Name} is unavailable.");
+        if (set.PrintedTotal != collector.PrintedTotal.Value)
+            throw new ArgumentException($"Collector reference total does not match {set.Name}.");
+    }
+
     private async Task<IReadOnlyList<TcgProviderCard>> PostFilterProviderCardsAsync(
         IReadOnlyList<TcgProviderCard> cards,
         string? nameQuery,
@@ -957,6 +1223,26 @@ public sealed class TcgCollectionService(
 
         var code = match.Groups["code"].Success ? match.Groups["code"].Value.ToUpperInvariant() : null;
         reference = new CollectorReference(code, match.Groups["number"].Value, numericValue, printedTotal);
+        return true;
+    }
+
+    private static bool TryParseBulkCollectorReference(
+        string value,
+        out CollectorReference reference,
+        out int quantity,
+        out string error)
+    {
+        reference = null!;
+        quantity = 1;
+        error = "Use a collector reference such as SVP 210 or SVP 210 x3.";
+        var match = BulkCollectorReferencePattern.Match(value);
+        if (!match.Success || !TryParseCollectorReference(match.Groups["reference"].Value, out reference)) return false;
+        if (!match.Groups["quantity"].Success) return true;
+        if (!int.TryParse(match.Groups["quantity"].Value, out quantity) || quantity is < 1 or > 9999)
+        {
+            error = "Quantity must be between 1 and 9999.";
+            return false;
+        }
         return true;
     }
 
@@ -1305,6 +1591,21 @@ public sealed class TcgCollectionService(
         if (normalized.Length > 2000) throw new ArgumentException("Notes cannot exceed 2000 characters.");
         return normalized;
     }
+
+    private sealed record BulkAddValue(
+        int Position,
+        AddTcgCollectionBulkItemRequest Request,
+        TcgCardEntity Card,
+        string Variant,
+        string Condition,
+        string Language,
+        string? Notes);
+
+    private readonly record struct CollectionEntryKey(
+        int CardId,
+        string Variant,
+        string Condition,
+        string Language);
 
     private sealed record CollectorReference(
         string? OfficialCode,

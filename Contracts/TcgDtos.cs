@@ -141,6 +141,47 @@ public sealed record AddTcgCollectionEntryRequest(
     int Quantity,
     string? Notes);
 
+public sealed record TcgBulkResolveRequest(IReadOnlyList<string>? Identifiers);
+
+public sealed record TcgBulkResolveItemDto(
+    int Index,
+    string Input,
+    int Quantity,
+    bool Success,
+    string? Error,
+    TcgCardDto? Card);
+
+public sealed record TcgBulkResolveResultDto(
+    IReadOnlyList<TcgBulkResolveItemDto> Items,
+    int Requested,
+    int Resolved,
+    int Failed,
+    bool Truncated);
+
+public sealed record AddTcgCollectionBulkItemRequest(
+    int Index,
+    int CardId,
+    string Variant,
+    string Condition,
+    string Language,
+    int Quantity,
+    string? Notes);
+
+public sealed record AddTcgCollectionBulkRequest(IReadOnlyList<AddTcgCollectionBulkItemRequest>? Items);
+
+public sealed record TcgBulkAddItemDto(
+    int Index,
+    int CardId,
+    bool Success,
+    string? Error,
+    UserCardDto? Entry);
+
+public sealed record TcgBulkAddResultDto(
+    IReadOnlyList<TcgBulkAddItemDto> Items,
+    int Requested,
+    int Added,
+    int Failed);
+
 public sealed record UpdateTcgCollectionEntryRequest(
     string? Variant = null,
     string? Condition = null,
