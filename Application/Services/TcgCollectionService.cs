@@ -1214,7 +1214,9 @@ public sealed class TcgCollectionService(
 
     private static string? GetCollectorReference(TcgCardEntity card)
     {
-        var setCode = FirstNotEmpty(card.Set.OfficialCode, card.Set.ProviderSetId);
+        var separator = card.ProviderCardId.LastIndexOf('-');
+        var providerSetId = separator > 0 ? card.ProviderCardId[..separator] : null;
+        var setCode = FirstNotEmpty(card.Set?.OfficialCode, card.Set?.ProviderSetId, providerSetId);
         var number = card.Number.Trim();
         return string.IsNullOrWhiteSpace(setCode) || number.Length == 0
             ? null
