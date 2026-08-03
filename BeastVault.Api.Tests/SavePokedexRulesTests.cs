@@ -66,4 +66,60 @@ public sealed class SavePokedexRulesTests
         Assert.False(SavePokedexRules.IsVersionExclusive(51, 1007));
         Assert.True(SavePokedexRules.IsVersionExclusive(51, 1006));
     }
+
+    [Theory]
+    [InlineData(1, 270)]
+    [InlineData(2, 273)]
+    [InlineData(3, 52)]
+    [InlineData(4, 23)]
+    [InlineData(5, 27)]
+    [InlineData(7, 56)]
+    [InlineData(8, 37)]
+    [InlineData(10, 86)]
+    [InlineData(11, 79)]
+    [InlineData(12, 79)]
+    [InlineData(20, 10)]
+    [InlineData(21, 13)]
+    [InlineData(22, 10)]
+    [InlineData(23, 13)]
+    [InlineData(24, 6)]
+    [InlineData(25, 6)]
+    [InlineData(26, 138)]
+    [InlineData(27, 140)]
+    [InlineData(30, 37)]
+    [InlineData(31, 27)]
+    [InlineData(32, 37)]
+    [InlineData(33, 20)]
+    [InlineData(35, 13)]
+    [InlineData(36, 13)]
+    [InlineData(37, 13)]
+    [InlineData(38, 27)]
+    [InlineData(39, 56)]
+    [InlineData(40, 37)]
+    [InlineData(41, 52)]
+    [InlineData(42, 25)]
+    [InlineData(43, 23)]
+    [InlineData(44, 83)]
+    [InlineData(45, 77)]
+    [InlineData(48, 10)]
+    [InlineData(49, 13)]
+    [InlineData(50, 27)]
+    [InlineData(51, 27)]
+    public void ConcreteGameVersionsHaveExclusiveSpecies(int originGame, int speciesId)
+    {
+        Assert.True(SavePokedexRules.IsVersionExclusive(originGame, speciesId));
+    }
+
+    [Theory]
+    [InlineData(53)]
+    [InlineData(54)]
+    [InlineData(56)]
+    [InlineData(58)]
+    [InlineData(65)]
+    [InlineData(74)]
+    [InlineData(76)]
+    public void GroupedVersionsDoNotInventExclusiveSpecies(int originGame)
+    {
+        Assert.False(SavePokedexRules.IsVersionExclusive(originGame, 27));
+    }
 }
