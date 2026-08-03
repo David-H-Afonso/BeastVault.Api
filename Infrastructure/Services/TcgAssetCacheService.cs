@@ -22,13 +22,16 @@ public sealed class TcgAssetCacheService(
     {
         "assets.tcgdex.net",
         "images.pokemontcg.io",
-        "product-images.tcgplayer.com"
+        "product-images.tcgplayer.com",
+        "den-cards.pokellector.com"
     };
     private static readonly IReadOnlyDictionary<string, string> SupplementalCardImages =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             // TCGdex has metadata for MEE 005 but no card artwork yet.
-            ["mee-005"] = "https://product-images.tcgplayer.com/fit-in/1000x1000/656267.jpg"
+            ["mee-005"] = "https://product-images.tcgplayer.com/fit-in/1000x1000/656267.jpg",
+            // TCGdex has metadata for SVP 210 but no card artwork yet.
+            ["svp-210"] = "https://den-cards.pokellector.com/364/Tornadus.SVPEN.210.59906.png"
         };
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> AssetLocks = new(StringComparer.Ordinal);
     private static readonly ConcurrentDictionary<string, Lazy<Task<TcgProviderSet?>>> ProviderSetCache = new(StringComparer.OrdinalIgnoreCase);

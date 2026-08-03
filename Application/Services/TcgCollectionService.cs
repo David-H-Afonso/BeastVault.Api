@@ -1125,25 +1125,35 @@ public sealed class TcgCollectionService(
             .ToList();
         if (dexIds.Count > 0) entity.NationalPokedexNumbersJson = JsonSerializer.Serialize(dexIds, JsonOptions);
 
-        var variants = Deserialize<string>(entity.VariantsJson)
-            .Concat(english.Variants)
-            .Concat(localized.Variants)
+        var hasCompleteProvider = english.IsComplete || spanish?.IsComplete == true;
+        var incomingVariants = english.Variants
+            .Concat(spanish?.Variants ?? [])
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Select(TcgDexProvider.NormalizeVariant)
             .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x)
             .ToList();
+        var variants = hasCompleteProvider && incomingVariants.Count > 0
+            ? incomingVariants
+            : Deserialize<string>(entity.VariantsJson)
+                .Concat(english.Variants)
+                .Concat(localized.Variants)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(TcgDexProvider.NormalizeVariant)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
         if (variants.Count > 0) entity.VariantsJson = JsonSerializer.Serialize(variants, JsonOptions);
 
         entity.PriceEur = localized.PriceEur ?? english.PriceEur ?? entity.PriceEur;
         entity.PriceUsd = localized.PriceUsd ?? english.PriceUsd ?? entity.PriceUsd;
-        entity.VariantPricesEurJson = MergePriceJson(
-            entity.VariantPricesEurJson,
-            english.VariantPricesEur,
-            localized.VariantPricesEur);
-        entity.VariantPricesUsdJson = MergePriceJson(
-            entity.VariantPricesUsdJson,
-            english.VariantPricesUsd,
-            localized.VariantPricesUsd);
+        var incomingPricesEur = MergePriceJson("{}", english.VariantPricesEur, spanish?.VariantPricesEur ?? new Dictionary<string, decimal>());
+        var incomingPricesUsd = MergePriceJson("{}", english.VariantPricesUsd, spanish?.VariantPricesUsd ?? new Dictionary<string, decimal>());
+        entity.VariantPricesEurJson = hasCompleteProvider && DeserializeDictionary(incomingPricesEur).Count > 0
+            ? incomingPricesEur
+            : MergePriceJson(entity.VariantPricesEurJson, english.VariantPricesEur, localized.VariantPricesEur);
+        entity.VariantPricesUsdJson = hasCompleteProvider && DeserializeDictionary(incomingPricesUsd).Count > 0
+            ? incomingPricesUsd
+            : MergePriceJson(entity.VariantPricesUsdJson, english.VariantPricesUsd, localized.VariantPricesUsd);
         entity.PriceUpdatedAt = Latest(entity.PriceUpdatedAt, Latest(english.PriceUpdatedAt, localized.PriceUpdatedAt));
         entity.CardmarketUrl = FirstNotEmpty(localized.CardmarketUrl, english.CardmarketUrl, entity.CardmarketUrl);
         entity.TcgplayerUrl = FirstNotEmpty(localized.TcgplayerUrl, english.TcgplayerUrl, entity.TcgplayerUrl);

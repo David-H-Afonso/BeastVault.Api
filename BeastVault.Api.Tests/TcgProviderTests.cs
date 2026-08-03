@@ -38,6 +38,7 @@ public sealed class TcgProviderTests
         Assert.Equal(4.61m, card.PriceEur);
         Assert.Equal(5.9m, card.PriceUsd);
         Assert.Equal(4.61m, card.VariantPricesEur["holo"]);
+        Assert.DoesNotContain("normal", card.VariantPricesEur.Keys);
         Assert.Equal(5.9m, card.VariantPricesUsd["holo"]);
         Assert.EndsWith("/high.webp", card.ImageLarge);
         Assert.True(card.IsComplete);
@@ -257,6 +258,32 @@ public sealed class TcgProviderTests
     }
 
     [Fact]
+    public void CompleteMerge_ReplacesStaleNormalVariantWithProviderHoloVariant()
+    {
+        var entity = new TcgCardEntity
+        {
+            ProviderCardId = "svp-210",
+            Name = "Tornadus",
+            Number = "210",
+            VariantsJson = "[\"normal\"]",
+            VariantPricesEurJson = "{\"normal\":1.66}"
+        };
+        var complete = new TcgProviderCard(
+            "svp-210", "svp", "SVP Black Star Promos", "Tornadus", "210", "Promo", "Kouki Saitou",
+            null, null, [641], ["holo"], 1.66m, null,
+            new Dictionary<string, decimal> { ["holo"] = 1.66m },
+            new Dictionary<string, decimal>(), DateTime.UtcNow, null, null, IsComplete: true);
+        var apply = typeof(TcgCollectionService).GetMethod("ApplyCard", BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        apply.Invoke(null, [entity, complete, null]);
+
+        Assert.Contains("holo", entity.VariantsJson);
+        Assert.DoesNotContain("normal", entity.VariantsJson);
+        Assert.Contains("holo", entity.VariantPricesEurJson);
+        Assert.DoesNotContain("normal", entity.VariantPricesEurJson);
+    }
+
+    [Fact]
     public void TcgAssetCandidates_FallBackToPokemonTcgIoImagesWithoutLeadingZeros()
     {
         var entity = new TcgCardEntity
@@ -290,6 +317,24 @@ public sealed class TcgProviderTests
         var candidates = (IReadOnlyList<string>)buildCandidates.Invoke(null, [entity, "large"])!;
 
         Assert.Contains("https://product-images.tcgplayer.com/fit-in/1000x1000/656267.jpg", candidates);
+    }
+
+    [Fact]
+    public void TcgAssetCandidates_UseSupplementalImageForSvp210()
+    {
+        var entity = new TcgCardEntity
+        {
+            Provider = "tcgdex",
+            ProviderCardId = "svp-210",
+            Number = "210",
+            Set = new TcgSetEntity { ProviderSetId = "svp", SeriesId = "sv" }
+        };
+        var buildCandidates = typeof(TcgAssetCacheService).GetMethod(
+            "BuildCardCandidates", BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        var candidates = (IReadOnlyList<string>)buildCandidates.Invoke(null, [entity, "large"])!;
+
+        Assert.Contains("https://den-cards.pokellector.com/364/Tornadus.SVPEN.210.59906.png", candidates);
     }
 
     [Theory]

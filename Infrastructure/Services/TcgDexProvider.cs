@@ -162,7 +162,7 @@ public sealed class TcgDexProvider(IHttpClientFactory httpClientFactory) : ITcgD
         var image = GetString(value, "image");
         var variants = ParseVariants(value);
         var dexIds = GetIntArray(value, "dexId");
-        var (eur, eurVariants, cardmarketUrl, cardmarketUpdated) = ParseCardmarket(value);
+        var (eur, eurVariants, cardmarketUrl, cardmarketUpdated) = ParseCardmarket(value, variants);
         var (usd, usdVariants, tcgplayerUrl, tcgplayerUpdated) = ParseTcgplayer(value);
         var (detailedEur, detailedUsd) = ParseDetailedVariantPrices(value);
         foreach (var price in detailedEur) eurVariants[price.Key] = price.Value;
@@ -223,14 +223,29 @@ public sealed class TcgDexProvider(IHttpClientFactory httpClientFactory) : ITcgD
         return result.OrderBy(x => x).ToList();
     }
 
-    private static (decimal? Price, Dictionary<string, decimal> Variants, string? Url, DateTime? Updated) ParseCardmarket(JsonElement value)
+    private static (decimal? Price, Dictionary<string, decimal> Variants, string? Url, DateTime? Updated) ParseCardmarket(
+        JsonElement value,
+        IReadOnlyCollection<string> cardVariants)
     {
         if (!TryPricing(value, "cardmarket", out var market)) return (null, [], null, null);
         var variants = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
         var basePrice = FirstPositive(market, "trend", "avg", "avg7", "low");
         var reverse = FirstPositive(market, "trend-holo", "avg-holo", "low-holo");
-        if (basePrice.HasValue) variants["normal"] = basePrice.Value;
-        if (reverse.HasValue) variants["reverse"] = reverse.Value;
+        var normalizedVariants = cardVariants
+            .Select(NormalizeVariant)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var primaryVariant = normalizedVariants.Contains("normal")
+            ? "normal"
+            : normalizedVariants.Contains("holo")
+                ? "holo"
+                : normalizedVariants.FirstOrDefault() ?? "normal";
+        if (basePrice.HasValue) variants[primaryVariant] = basePrice.Value;
+        if (reverse.HasValue)
+        {
+            var secondaryVariant = normalizedVariants.Contains("reverse") ? "reverse" : primaryVariant;
+            variants[secondaryVariant] = reverse.Value;
+        }
         return (
             basePrice ?? reverse,
             variants,
