@@ -78,6 +78,46 @@ public sealed class TcgProviderTests
     }
 
     [Fact]
+    public async Task TcgDex_LocalizedVariantNamesAreCanonicalized()
+    {
+        const string json = """
+        {
+          "id":"sve-012","localId":"012","name":"Energy",
+          "set":{"id":"sve","name":"Energy"},
+          "variants":{"normal":true,"reverse":true},
+          "variants_detailed":[{"type":"básico","size":"estándar"},{"type":"reversa","size":"estándar"}]
+        }
+        """;
+        var provider = new TcgDexProvider(Factory(json));
+
+        var card = await provider.GetCardAsync("sve-012", "es", CancellationToken.None);
+
+        Assert.NotNull(card);
+        Assert.Equal(["normal", "reverse"], card.Variants);
+    }
+
+    [Fact]
+    public async Task TcgDex_PreservesSpecialFoilVariants()
+    {
+        const string json = """
+        {
+          "id":"sv08-092","localId":"092","name":"Tapu Lele",
+          "set":{"id":"sv08","name":"Surging Sparks"},
+          "variants_detailed":[
+            {"type":"holo","foil":"cosmos","size":"standard"},
+            {"type":"reverse","foil":"cracked-ice","size":"standard"}
+          ]
+        }
+        """;
+        var provider = new TcgDexProvider(Factory(json));
+
+        var card = await provider.GetCardAsync("sv08-092", "en", CancellationToken.None);
+
+        Assert.NotNull(card);
+        Assert.Equal(["holo-cosmos", "reverse-cracked-ice"], card.Variants);
+    }
+
+    [Fact]
     public async Task TcgDex_SetParsesOfficialMetadataAndAddsWebpAssetSuffixes()
     {
         const string json = """
@@ -214,6 +254,24 @@ public sealed class TcgProviderTests
         Assert.Contains("reverse", entity.VariantPricesEurJson);
         Assert.NotNull(entity.ImageLarge);
         Assert.NotNull(entity.DetailedAt);
+    }
+
+    [Fact]
+    public void TcgAssetCandidates_FallBackToPokemonTcgIoImagesWithoutLeadingZeros()
+    {
+        var entity = new TcgCardEntity
+        {
+            Provider = "tcgdex",
+            ProviderCardId = "sve-012",
+            Number = "012",
+            Set = new TcgSetEntity { ProviderSetId = "sve", SeriesId = "sv" }
+        };
+        var buildCandidates = typeof(TcgAssetCacheService).GetMethod(
+            "BuildCardCandidates", BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        var candidates = (IReadOnlyList<string>)buildCandidates.Invoke(null, [entity, "small"])!;
+
+        Assert.Contains("https://images.pokemontcg.io/sve/12.png", candidates);
     }
 
     [Theory]

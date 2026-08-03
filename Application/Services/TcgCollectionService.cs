@@ -1040,7 +1040,7 @@ public sealed class TcgCollectionService(
         return new(
         card.Id, card.ProviderCardId, card.Name, card.NameEn, card.Number, card.Rarity, card.Artist,
         GetCardAssetUrl(card, "small"), GetCardAssetUrl(card, "large"), Deserialize<int>(card.NationalPokedexNumbersJson),
-        Deserialize<string>(card.VariantsJson), card.SetId, card.Set.ProviderSetId, card.Set.Name, collectorReference,
+        GetCanonicalVariants(card.VariantsJson), card.SetId, card.Set.ProviderSetId, card.Set.Name, collectorReference,
         new TcgPriceDto(
             card.PriceEur,
             card.PriceUsd,
@@ -1049,7 +1049,7 @@ public sealed class TcgCollectionService(
             tcgplayerUrl,
             DeserializeDictionary(card.VariantPricesEurJson),
             DeserializeDictionary(card.VariantPricesUsdJson)),
-        owned.Select(x => new TcgOwnedEntryDto(x.Id, x.Variant, x.Condition, x.Language, x.Quantity, x.Notes)).ToList(),
+        owned.Select(x => new TcgOwnedEntryDto(x.Id, TcgDexProvider.NormalizeVariant(x.Variant), x.Condition, x.Language, x.Quantity, x.Notes)).ToList(),
         owned.Sum(x => x.Quantity),
         card.DetailedAt,
         card.PriceCheckedAt,
@@ -1061,7 +1061,7 @@ public sealed class TcgCollectionService(
         var entity = entry.Card;
         var eur = GetVariantPrice(entity.VariantPricesEurJson, entry.Variant, entity.PriceEur);
         var usd = GetVariantPrice(entity.VariantPricesUsdJson, entry.Variant, entity.PriceUsd);
-        return new UserCardDto(entry.Id, card, entry.Variant, entry.Condition, entry.Language, entry.Quantity,
+        return new UserCardDto(entry.Id, card, TcgDexProvider.NormalizeVariant(entry.Variant), entry.Condition, entry.Language, entry.Quantity,
             entry.Notes, entry.AddedAt, eur, usd, eur * entry.Quantity, usd * entry.Quantity);
     }
 
@@ -1071,7 +1071,7 @@ public sealed class TcgCollectionService(
         var usd = GetVariantPrice(entry.Card.VariantPricesUsdJson, entry.Variant, entry.Card.PriceUsd);
         return new TcgCollectionEntryDto(
             entry.Id,
-            entry.Variant,
+            TcgDexProvider.NormalizeVariant(entry.Variant),
             entry.Condition,
             entry.Language,
             entry.Quantity,
@@ -1129,6 +1129,7 @@ public sealed class TcgCollectionService(
             .Concat(english.Variants)
             .Concat(localized.Variants)
             .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(TcgDexProvider.NormalizeVariant)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
         if (variants.Count > 0) entity.VariantsJson = JsonSerializer.Serialize(variants, JsonOptions);
@@ -1201,6 +1202,13 @@ public sealed class TcgCollectionService(
                 merged[TcgDexProvider.NormalizeVariant(price.Key)] = price.Value;
         return JsonSerializer.Serialize(merged, JsonOptions);
     }
+
+    private static IReadOnlyList<string> GetCanonicalVariants(string json) =>
+        Deserialize<string>(json)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(TcgDexProvider.NormalizeVariant)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     private static DateTime? Latest(DateTime? first, DateTime? second)
     {

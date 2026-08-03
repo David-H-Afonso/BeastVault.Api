@@ -300,6 +300,7 @@ public sealed class TcgDexProvider(IHttpClientFactory httpClientFactory) : ITcgD
             parts.AddRange(stamps.EnumerateArray().Select(x => x.GetString()).Where(x => !string.IsNullOrWhiteSpace(x))!);
         AddPart(parts, GetString(variant, "subtype"));
         AddPart(parts, GetString(variant, "type"));
+        AddPart(parts, GetString(variant, "foil"));
         var size = GetString(variant, "size");
         if (!string.Equals(size, "standard", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(size, "estándar", StringComparison.OrdinalIgnoreCase))
@@ -320,7 +321,11 @@ public sealed class TcgDexProvider(IHttpClientFactory httpClientFactory) : ITcgD
 
     internal static string NormalizeVariant(string value)
     {
-        var normalized = value.Trim().Replace('_', '-');
+        var normalized = new string(value.Trim()
+            .Normalize(System.Text.NormalizationForm.FormD)
+            .Where(character => CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark)
+            .ToArray())
+            .Replace('_', '-');
         var result = new System.Text.StringBuilder();
         foreach (var character in normalized)
         {
@@ -331,6 +336,9 @@ public sealed class TcgDexProvider(IHttpClientFactory httpClientFactory) : ITcgD
             .Replace("holofoil", "holo")
             .Replace("reverse-holo", "reverse")
             .Replace("first-edition", "1st-edition")
+            .Replace("basico", "normal")
+            .Replace("reversa", "reverse")
+            .Replace("holographic", "holo")
             .Replace("unlimited-holo", "unlimited-holo");
     }
 

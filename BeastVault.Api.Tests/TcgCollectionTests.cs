@@ -235,6 +235,7 @@ public sealed class TcgCollectionTests : IClassFixture<HouseholdApiFactory>
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var card = await db.TcgCards.SingleAsync(x => x.Id == charmanderId);
             card.ImageSmall = "https://untrusted.example/card.webp";
+            card.VariantsJson = "[\"normal\",\"básico\",\"reverse\",\"reversa\"]";
             await db.SaveChangesAsync();
         }
 
@@ -243,6 +244,9 @@ public sealed class TcgCollectionTests : IClassFixture<HouseholdApiFactory>
         using (var json = JsonDocument.Parse(await cardResponse.Content.ReadAsStringAsync()))
         {
             Assert.Equal($"/tcg/assets/cards/{charmanderId}/small", json.RootElement.GetProperty("imageSmall").GetString());
+            Assert.Equal(
+                new[] { "normal", "reverse" },
+                json.RootElement.GetProperty("variants").EnumerateArray().Select(x => x.GetString()).ToArray());
         }
 
         var assetResponse = await _client.GetAsync($"/tcg/assets/cards/{charmanderId}/small");

@@ -204,6 +204,7 @@ public sealed class TcgAssetCacheService(
             foreach (var language in new[] { "en", "es", "univ" })
                 result.Add(BuildTcgDexCardUrl(language, card.Set.SeriesId, card.Set.ProviderSetId, localId, primaryQuality));
 
+            result.Add(BuildPokemonTcgIoCardUrl(card.Set.ProviderSetId, NormalizePokemonTcgIoLocalId(localId), primaryQuality));
             if (!string.IsNullOrWhiteSpace(primarySource)) result.Add(primarySource);
 
         }
@@ -312,6 +313,18 @@ public sealed class TcgAssetCacheService(
 
     private static string BuildTcgDexCardUrl(string language, string seriesId, string setId, string localId, string quality) =>
         $"https://assets.tcgdex.net/{language}/{Uri.EscapeDataString(seriesId)}/{Uri.EscapeDataString(setId)}/{Uri.EscapeDataString(localId)}/{quality}.webp";
+
+    private static string BuildPokemonTcgIoCardUrl(string setId, string localId, string quality)
+    {
+        var suffix = quality == "low" ? ".png" : "_hires.png";
+        return $"https://images.pokemontcg.io/{Uri.EscapeDataString(setId)}/{Uri.EscapeDataString(localId)}{suffix}";
+    }
+
+    private static string NormalizePokemonTcgIoLocalId(string localId)
+    {
+        var normalized = localId.TrimStart('0');
+        return normalized.Length == 0 ? "0" : normalized;
+    }
 
     private static string BuildTcgDexSetUrl(string language, string seriesId, string setId, string kind) =>
         $"https://assets.tcgdex.net/{language}/{Uri.EscapeDataString(seriesId)}/{Uri.EscapeDataString(setId)}/{kind}.webp";
