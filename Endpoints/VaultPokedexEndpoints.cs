@@ -59,7 +59,14 @@ public static class VaultPokedexEndpoints
                 speciesQuery = speciesQuery.Where(s => s.Generation == generation.Value);
 
             if (!string.IsNullOrWhiteSpace(search))
-                speciesQuery = speciesQuery.Where(s => s.Name.Contains(search.ToLower()));
+            {
+                var normalizedSearch = search.Trim().TrimStart('#').ToLowerInvariant();
+                var isNumber = int.TryParse(normalizedSearch, out var speciesNumber);
+                speciesQuery = speciesQuery.Where(s =>
+                    s.Name.Contains(normalizedSearch) ||
+                    s.LocalizedNames.ToLower().Contains(normalizedSearch) ||
+                    (isNumber && s.SpeciesId == speciesNumber));
+            }
 
             var allSpecies = await speciesQuery
                 .OrderBy(s => s.SpeciesId)

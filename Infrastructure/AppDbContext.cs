@@ -43,6 +43,8 @@ namespace BeastVault.Api.Infrastructure
         public DbSet<TcgCardEntity> TcgCards => Set<TcgCardEntity>();
         public DbSet<UserTcgCardEntity> UserTcgCards => Set<UserTcgCardEntity>();
         public DbSet<UserApiCredentialEntity> UserApiCredentials => Set<UserApiCredentialEntity>();
+        public DbSet<DexHuntListEntity> DexHuntLists => Set<DexHuntListEntity>();
+        public DbSet<DexHuntItemEntity> DexHuntItems => Set<DexHuntItemEntity>();
 
         protected override void OnModelCreating(ModelBuilder b)
         {
@@ -162,6 +164,29 @@ namespace BeastVault.Api.Infrastructure
                 .HasOne(x => x.Box)
                 .WithMany(bx => bx.Slots)
                 .HasForeignKey(x => x.BoxId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            b.Entity<DexHuntListEntity>().HasKey(x => x.Id);
+            b.Entity<DexHuntListEntity>().Property(x => x.Name).HasMaxLength(100);
+            b.Entity<DexHuntListEntity>().Property(x => x.GameName).HasMaxLength(100);
+            b.Entity<DexHuntListEntity>().Property(x => x.Description).HasMaxLength(500);
+            b.Entity<DexHuntListEntity>().HasIndex(x => new { x.UserId, x.SortOrder });
+            b.Entity<DexHuntListEntity>().HasIndex(x => new { x.UserId, x.Name });
+            b.Entity<DexHuntListEntity>()
+                .HasOne(x => x.User)
+                .WithMany(x => x.DexHuntLists)
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            b.Entity<DexHuntItemEntity>().HasKey(x => x.Id);
+            b.Entity<DexHuntItemEntity>().Property(x => x.Notes).HasMaxLength(500);
+            b.Entity<DexHuntItemEntity>().HasIndex(x => new { x.HuntListId, x.SortOrder });
+            b.Entity<DexHuntItemEntity>().HasIndex(x => new { x.HuntListId, x.SpeciesId }).IsUnique();
+            b.Entity<DexHuntItemEntity>().HasIndex(x => new { x.HuntListId, x.IsCaught });
+            b.Entity<DexHuntItemEntity>()
+                .HasOne(x => x.HuntList)
+                .WithMany(x => x.Items)
+                .HasForeignKey(x => x.HuntListId)
                 .OnDelete(DeleteBehavior.Cascade);
             b.Entity<PokemonBoxSlotEntity>()
                 .HasOne(x => x.Pokemon)

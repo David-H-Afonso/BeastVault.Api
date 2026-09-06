@@ -358,6 +358,7 @@ app.MapSpriteEndpoints();
 app.MapImportEndpoints();
 app.MapSaveFileEndpoints();
 app.MapTcgCollectionEndpoints();
+app.MapDexHuntEndpoints();
 app.MapPokemonEndpoints();
 app.MapTagEndpoints();
 app.MapBoxesEndpoints();
@@ -807,6 +808,43 @@ using (var scope = app.Services.CreateScope())
 
         await ExecutePatchSqlAsync(@"CREATE INDEX IF NOT EXISTS ""IX_PokemonBoxes_UserId_SortOrder"" ON ""PokemonBoxes"" (""UserId"", ""SortOrder"")");
         await ExecutePatchSqlAsync(@"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_PokemonBoxSlots_PokemonId"" ON ""PokemonBoxSlots"" (""PokemonId"")");
+
+        await EnsureTableAsync("DexHuntLists", @"
+            ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+            ""UserId"" INTEGER NOT NULL,
+            ""Name"" TEXT NOT NULL,
+            ""GameId"" INTEGER NOT NULL,
+            ""GameName"" TEXT NOT NULL,
+            ""Description"" TEXT,
+            ""SortOrder"" INTEGER NOT NULL DEFAULT 0,
+            ""CreatedAt"" TEXT NOT NULL,
+            ""UpdatedAt"" TEXT NOT NULL,
+            CONSTRAINT ""FK_DexHuntLists_Users_UserId"" FOREIGN KEY (""UserId"") REFERENCES ""Users"" (""Id"") ON DELETE CASCADE)");
+
+        await EnsureTableAsync("DexHuntItems", @"
+            ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+            ""HuntListId"" INTEGER NOT NULL,
+            ""SpeciesId"" INTEGER NOT NULL,
+            ""Priority"" INTEGER NOT NULL DEFAULT 1,
+            ""IsCaught"" INTEGER NOT NULL DEFAULT 0,
+            ""Notes"" TEXT,
+            ""SortOrder"" INTEGER NOT NULL DEFAULT 0,
+            ""AddedAt"" TEXT NOT NULL,
+            ""UpdatedAt"" TEXT NOT NULL,
+            ""CaughtAt"" TEXT,
+            CONSTRAINT ""FK_DexHuntItems_DexHuntLists_HuntListId"" FOREIGN KEY (""HuntListId"") REFERENCES ""DexHuntLists"" (""Id"") ON DELETE CASCADE)");
+
+        foreach (var sql in new[]
+        {
+            @"CREATE INDEX IF NOT EXISTS ""IX_DexHuntLists_UserId_Name"" ON ""DexHuntLists"" (""UserId"", ""Name"")",
+            @"CREATE INDEX IF NOT EXISTS ""IX_DexHuntLists_UserId_SortOrder"" ON ""DexHuntLists"" (""UserId"", ""SortOrder"")",
+            @"CREATE INDEX IF NOT EXISTS ""IX_DexHuntItems_HuntListId_IsCaught"" ON ""DexHuntItems"" (""HuntListId"", ""IsCaught"")",
+            @"CREATE INDEX IF NOT EXISTS ""IX_DexHuntItems_HuntListId_SortOrder"" ON ""DexHuntItems"" (""HuntListId"", ""SortOrder"")",
+            @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_DexHuntItems_HuntListId_SpeciesId"" ON ""DexHuntItems"" (""HuntListId"", ""SpeciesId"")"
+        })
+        {
+            await ExecutePatchSqlAsync(sql);
+        }
 
         // Bulbapedia cache table
         await EnsureTableAsync("BulbapediaCache", @"

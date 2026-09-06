@@ -19,6 +19,7 @@ public class User
     public ICollection<PokemonEntity> Pokemon { get; set; } = [];
     public ICollection<TagEntity> Tags { get; set; } = [];
     public ICollection<PokemonBoxEntity> PokemonBoxes { get; set; } = [];
+    public ICollection<DexHuntListEntity> DexHuntLists { get; set; } = [];
     public ICollection<SaveFileEntity> SaveFiles { get; set; } = [];
     public ICollection<UserTcgCardEntity> TcgCards { get; set; } = [];
     public ICollection<UserApiCredentialEntity> ApiCredentials { get; set; } = [];
