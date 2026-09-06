@@ -278,6 +278,8 @@ namespace BeastVault.Api.Endpoints
                     Generations = generations,
                     OriginGenerations = generations,
                     CapturedGenerations = generations,
+                    OriginRegions = PokemonGameInfoService.OriginRegions,
+                    CapturedRegions = PokemonGameInfoService.CapturedRegions,
                     // Genders = genders, // Temporarily disabled
                     SortFields = workingSortFields, // Only working sort fields
                     TypeFilterModes = typeFilterModes,

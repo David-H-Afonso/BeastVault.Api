@@ -40,7 +40,9 @@ namespace BeastVault.Api.Infrastructure.Services
                 PKM? pk;
                 try
                 {
-                    pk = EntityFormat.GetFromBytes(bytes);
+                    // Some PKHeX constructors decrypt in place. Parse a copy so the
+                    // original bytes remain suitable for backup and later repair.
+                    pk = EntityFormat.GetFromBytes(bytes.ToArray());
                 }
                 catch
                 {
@@ -235,6 +237,7 @@ namespace BeastVault.Api.Infrastructure.Services
                     return false;
                 }
 
+                var calculatedStats = pk.GetStats(pk.PersonalInfo);
                 var s = new StatsEntity
                 {
                     IvHp = pk.IV_HP,
@@ -256,14 +259,15 @@ namespace BeastVault.Api.Infrastructure.Services
                     HyperTrainedSpd = GetHT("HT_SPD"),
                     HyperTrainedSpe = GetHT("HT_SPE"),
 
-                    // Current calculated stats
-                    StatHp = GetProp<int>("Stat_HPMax"),
-                    StatAtk = GetProp<int>("Stat_ATK"),
-                    StatDef = GetProp<int>("Stat_DEF"),
-                    StatSpa = GetProp<int>("Stat_SPA"),
-                    StatSpd = GetProp<int>("Stat_SPD"),
-                    StatSpe = GetProp<int>("Stat_SPE"),
-                    StatHpCurrent = GetProp<int>("Stat_HPCurrent")
+                    // Stored-format files do not contain party stats. Always calculate
+                    // battle stats from the Pokémon data instead of reading trailing bytes.
+                    StatHp = calculatedStats[0],
+                    StatAtk = calculatedStats[1],
+                    StatDef = calculatedStats[2],
+                    StatSpe = calculatedStats[3],
+                    StatSpa = calculatedStats[4],
+                    StatSpd = calculatedStats[5],
+                    StatHpCurrent = calculatedStats[0]
                 };
 
                 // Enhanced moves with current PP
@@ -339,13 +343,9 @@ namespace BeastVault.Api.Infrastructure.Services
         // Gender: 0 = Male, 1 = Female, 2 = Genderless
         private static int GetGender(PKM pk)
         {
-            // Try property "Gender" (0 = Male, 1 = Female, 2 = Genderless)
+            // PKHeX exposes these values as bytes in current formats.
             var pi = pk.GetType().GetProperty("Gender");
-            if (pi != null && pi.PropertyType == typeof(int))
-            {
-                var val = pi.GetValue(pk);
-                if (val is int i) return i;
-            }
+            if (pi?.GetValue(pk) is { } gender) return Convert.ToInt32(gender);
             // Try property "IsFemale" (bool)
             pi = pk.GetType().GetProperty("IsFemale");
             if (pi != null && pi.PropertyType == typeof(bool))
@@ -360,18 +360,10 @@ namespace BeastVault.Api.Infrastructure.Services
         private static int GetOTGender(PKM pk)
         {
             var pi = pk.GetType().GetProperty("OT_Gender");
-            if (pi != null && pi.PropertyType == typeof(int))
-            {
-                var val = pi.GetValue(pk);
-                if (val is int i) return i;
-            }
+            if (pi?.GetValue(pk) is { } otGender) return Convert.ToInt32(otGender);
             // Try property "TrainerGender" (int)
             pi = pk.GetType().GetProperty("TrainerGender");
-            if (pi != null && pi.PropertyType == typeof(int))
-            {
-                var val = pi.GetValue(pk);
-                if (val is int i) return i;
-            }
+            if (pi?.GetValue(pk) is { } trainerGender) return Convert.ToInt32(trainerGender);
             return 0; // default Male
         }
 
@@ -405,7 +397,7 @@ namespace BeastVault.Api.Infrastructure.Services
         private static DateTime? BuildMetDate(int year, int month, int day)
         {
             if (year <= 0 || month <= 0 || day <= 0) return null;
-            try { return new DateTime(year, month, day); }
+            try { return new DateTime(year < 100 ? 2000 + year : year, month, day); }
             catch { return null; }
         }
     }

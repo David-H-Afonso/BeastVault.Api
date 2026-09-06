@@ -10,6 +10,61 @@ namespace BeastVault.Api.Infrastructure.Services;
 /// </summary>
 public static class PokemonGameInfoService
 {
+    public static readonly string[] OriginRegions =
+        ["Kanto", "Johto", "Hoenn", "Sinnoh", "Unova", "Kalos", "Alola", "Galar", "Hisui", "Paldea"];
+
+    public static readonly string[] CapturedRegions =
+        [.. OriginRegions, "Orre", "Pokémon GO"];
+
+    public static string GetSpeciesOriginRegion(int speciesId) => speciesId switch
+    {
+        >= 1 and <= 151 => "Kanto",
+        >= 152 and <= 251 => "Johto",
+        >= 252 and <= 386 => "Hoenn",
+        >= 387 and <= 493 => "Sinnoh",
+        >= 494 and <= 649 => "Unova",
+        >= 650 and <= 721 => "Kalos",
+        >= 722 and <= 809 => "Alola",
+        >= 810 and <= 898 => "Galar",
+        >= 899 and <= 905 => "Hisui",
+        >= 906 => "Paldea",
+        _ => "Unknown"
+    };
+
+    public static IReadOnlyList<int> GetSpeciesIdsForRegion(string region) => region.Trim().ToLowerInvariant() switch
+    {
+        "kanto" => Enumerable.Range(1, 151).ToArray(),
+        "johto" => Enumerable.Range(152, 100).ToArray(),
+        "hoenn" => Enumerable.Range(252, 135).ToArray(),
+        "sinnoh" => Enumerable.Range(387, 107).ToArray(),
+        "unova" => Enumerable.Range(494, 156).ToArray(),
+        "kalos" => Enumerable.Range(650, 72).ToArray(),
+        "alola" => Enumerable.Range(722, 88).ToArray(),
+        "galar" => Enumerable.Range(810, 89).ToArray(),
+        "hisui" => Enumerable.Range(899, 7).ToArray(),
+        "paldea" => Enumerable.Range(906, 200).ToArray(),
+        _ => []
+    };
+
+    public static IReadOnlyList<int> GetGameIdsForRegion(string region) => region.Trim().ToLowerInvariant() switch
+    {
+        "kanto" => [4, 5, 35, 36, 37, 38, 42, 43, 53, 54, 59, 73],
+        "johto" => [7, 8, 39, 40, 41, 55, 56, 65],
+        "hoenn" => [1, 2, 3, 26, 27, 57, 58, 70],
+        "orre" => [15, 61, 62],
+        "sinnoh" => [10, 11, 12, 16, 48, 49, 63, 64, 75],
+        "unova" => [20, 21, 22, 23, 66, 67],
+        "kalos" => [24, 25, 52, 68],
+        "alola" => [30, 31, 32, 33, 71, 72],
+        "pokémon go" or "pokemon go" => [34],
+        "galar" => [44, 45, 74],
+        "hisui" => [47],
+        "paldea" => [50, 51, 76],
+        _ => []
+    };
+
+    public static string GetCapturedRegion(int gameId) => CapturedRegions
+        .FirstOrDefault(region => GetGameIdsForRegion(region).Contains(gameId)) ?? "Unknown";
     /// <summary>
     /// Get all games by generation (based on PKHeX GameVersion enum)
     /// </summary>

@@ -279,10 +279,10 @@ namespace BeastVault.Api.Infrastructure.Services
                 3 => "FRE",
                 4 => "ITA",
                 5 => "GER",
-                6 => "SPA",
-                7 => "KOR",
-                8 => "CHS",
-                9 => "CHT",
+                7 or 11 => "SPA",
+                8 => "KOR",
+                9 => "CHS",
+                10 => "CHT",
                 _ => "UNK"
             };
         }

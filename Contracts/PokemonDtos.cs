@@ -62,6 +62,8 @@ public record PokemonListItemDto
     public string SpriteKey { get; init; } = "";
     public int OriginGeneration { get; init; }
     public int CapturedGeneration { get; init; }
+    public string OriginRegion { get; init; } = "";
+    public string CapturedRegion { get; init; } = "";
     public bool CanGigantamax { get; init; }
     public bool HasMegaStone { get; init; }
     public DateTime ImportedAt { get; init; }
@@ -189,6 +191,8 @@ public record PokemonDetailDto
     public string? NatureBoostedStat { get; init; }
     public string? NatureReducedStat { get; init; }
     public int OriginGeneration { get; init; }
+    public string OriginRegion { get; init; } = "";
+    public string CapturedRegion { get; init; } = "";
 
     // Clean display fields — frontend renders these directly
     public string OriginGameName { get; init; } = "";
@@ -271,6 +275,8 @@ public record PokemonDetailDto
         OriginGeneration = !string.IsNullOrEmpty(fileFormat)
             ? PokemonGameInfoService.GetCapturedGeneration(p.OriginGame, fileFormat)
             : PokemonGameInfoService.GetSpeciesOriginGeneration(p.SpeciesId);
+        OriginRegion = PokemonGameInfoService.GetSpeciesOriginRegion(p.SpeciesId);
+        CapturedRegion = PokemonGameInfoService.GetCapturedRegion(p.OriginGame);
 
         // Clean display fields via mapper
         OriginGameName = PokemonDisplayMapper.ResolveOriginGameName(p.OriginGame);

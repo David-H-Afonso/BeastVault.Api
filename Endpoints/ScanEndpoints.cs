@@ -149,6 +149,7 @@ Supported file formats:
 
         private static async Task<IResult> RefreshPokemonData(
             [FromServices] AppDbContext db,
+            [FromServices] PkhexCoreParser parser,
             HttpContext ctx)
         {
             var userId = ctx.GetUserId();
@@ -172,8 +173,37 @@ Supported file formats:
 
                 try
                 {
-                    var pk = EntityFormat.GetFromBytes(rawBlob);
+                    var parsed = await parser.ParseAsync(rawBlob, pf.File.OriginalFileName ?? pf.File.FileName);
+                    if (parsed == null) continue;
+                    var pk = EntityFormat.GetFromBytes(rawBlob.ToArray());
                     if (pk == null) continue;
+
+                    p.Language = parsed.Pokemon.Language;
+                    p.OTLanguage = parsed.Pokemon.OTLanguage;
+                    p.MetDate = parsed.Pokemon.MetDate;
+                    p.Tid = parsed.Pokemon.Tid;
+                    p.Sid = parsed.Pokemon.Sid;
+                    p.OtName = parsed.Pokemon.OtName;
+
+                    if (parsed.Stats is not null)
+                    {
+                        var existingStats = await db.Stats.FirstOrDefaultAsync(s => s.PokemonId == p.Id);
+                        if (existingStats is null)
+                        {
+                            parsed.Stats.PokemonId = p.Id;
+                            db.Stats.Add(parsed.Stats);
+                        }
+                        else
+                        {
+                            existingStats.StatHp = parsed.Stats.StatHp;
+                            existingStats.StatAtk = parsed.Stats.StatAtk;
+                            existingStats.StatDef = parsed.Stats.StatDef;
+                            existingStats.StatSpa = parsed.Stats.StatSpa;
+                            existingStats.StatSpd = parsed.Stats.StatSpd;
+                            existingStats.StatSpe = parsed.Stats.StatSpe;
+                            existingStats.StatHpCurrent = parsed.Stats.StatHpCurrent;
+                        }
+                    }
 
                     // Update fields using Convert to handle byte/ushort/int differences
                     var metLevelProp = pk.GetType().GetProperty("MetLevel") ?? pk.GetType().GetProperty("Met_Level");

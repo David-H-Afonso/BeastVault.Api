@@ -15,11 +15,13 @@ public class PokemonService : IPokemonService
 {
     private readonly AppDbContext _db;
     private readonly FileStorageService _storage;
+    private readonly PkhexCoreParser _parser;
 
-    public PokemonService(AppDbContext db, FileStorageService storage)
+    public PokemonService(AppDbContext db, FileStorageService storage, PkhexCoreParser parser)
     {
         _db = db;
         _storage = storage;
+        _parser = parser;
     }
 
     public async Task<PokemonListResponseDto> GetPokemonListAsync(int userId, AdvancedPokemonQuery q)
@@ -76,6 +78,8 @@ public class PokemonService : IPokemonService
                 SpriteKey = pf.Pokemon.SpriteKey,
                 OriginGeneration = PokemonGameInfoService.GetSpeciesOriginGeneration(pf.Pokemon.SpeciesId),
                 CapturedGeneration = PokemonGameInfoService.GetCapturedGeneration(pf.Pokemon.OriginGame, pf.File.Format),
+                OriginRegion = PokemonGameInfoService.GetSpeciesOriginRegion(pf.Pokemon.SpeciesId),
+                CapturedRegion = PokemonGameInfoService.GetCapturedRegion(pf.Pokemon.OriginGame),
                 CanGigantamax = pf.Pokemon.CanGigantamax,
                 HasMegaStone = PokemonFormService.CheckHasMegaStone(pf.Pokemon),
                 pf.File.ImportedAt
@@ -216,6 +220,8 @@ public class PokemonService : IPokemonService
                 SpriteKey = item.SpriteKey,
                 OriginGeneration = item.OriginGeneration,
                 CapturedGeneration = item.CapturedGeneration,
+                OriginRegion = item.OriginRegion,
+                CapturedRegion = item.CapturedRegion,
                 CanGigantamax = item.CanGigantamax,
                 HasMegaStone = item.HasMegaStone,
                 ImportedAt = item.ImportedAt,
@@ -479,11 +485,52 @@ public class PokemonService : IPokemonService
 
     public async Task<PokemonDetailDto?> GetPokemonByIdAsync(int userId, int pokemonId)
     {
-        var p = await _db.Pokemon.AsNoTracking().FirstOrDefaultAsync(x => x.Id == pokemonId && x.UserId == userId);
+        var p = await _db.Pokemon.FirstOrDefaultAsync(x => x.Id == pokemonId && x.UserId == userId);
         if (p == null) return null;
 
         var file = await _db.Files.AsNoTracking().FirstOrDefaultAsync(f => f.Id == p.FileId);
-        var stats = await _db.Stats.AsNoTracking().FirstOrDefaultAsync(x => x.PokemonId == p.Id);
+        var stats = await _db.Stats.FirstOrDefaultAsync(x => x.PokemonId == p.Id);
+
+        // Repair metadata produced by older parsers without requiring re-import.
+        if (file?.RawBlob is { Length: > 0 })
+        {
+            var parsed = await _parser.ParseAsync(file.RawBlob, file.OriginalFileName ?? file.FileName);
+            if (parsed is not null)
+            {
+                p.Language = parsed.Pokemon.Language;
+                p.OTLanguage = parsed.Pokemon.OTLanguage;
+                p.MetDate = parsed.Pokemon.MetDate;
+                p.Gender = parsed.Pokemon.Gender;
+                p.OTGender = parsed.Pokemon.OTGender;
+                p.Tid = parsed.Pokemon.Tid;
+                p.Sid = parsed.Pokemon.Sid;
+                p.OtName = parsed.Pokemon.OtName;
+                p.MetLevel = parsed.Pokemon.MetLevel;
+                p.MetLocation = parsed.Pokemon.MetLocation;
+
+                if (parsed.Stats is not null)
+                {
+                    if (stats is null)
+                    {
+                        stats = parsed.Stats;
+                        stats.PokemonId = p.Id;
+                        _db.Stats.Add(stats);
+                    }
+                    else
+                    {
+                        stats.StatHp = parsed.Stats.StatHp;
+                        stats.StatAtk = parsed.Stats.StatAtk;
+                        stats.StatDef = parsed.Stats.StatDef;
+                        stats.StatSpa = parsed.Stats.StatSpa;
+                        stats.StatSpd = parsed.Stats.StatSpd;
+                        stats.StatSpe = parsed.Stats.StatSpe;
+                        stats.StatHpCurrent = parsed.Stats.StatHpCurrent;
+                    }
+                }
+
+                await _db.SaveChangesAsync();
+            }
+        }
         var moves = await _db.Moves.AsNoTracking().Where(x => x.PokemonId == p.Id).OrderBy(x => x.Slot).ToListAsync();
         var relearnMoves = await _db.RelearnMoves.AsNoTracking().Where(x => x.PokemonId == p.Id).OrderBy(x => x.Slot).ToListAsync();
 

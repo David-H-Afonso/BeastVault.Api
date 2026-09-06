@@ -119,6 +119,16 @@ public static class PokemonQueryService
             specifications.Add(new CapturedGenerationSpecification(query.CapturedGeneration.Value));
         }
 
+        if (!string.IsNullOrWhiteSpace(query.OriginRegion))
+        {
+            specifications.Add(new OriginRegionSpecification(query.OriginRegion));
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.CapturedRegion))
+        {
+            specifications.Add(new CapturedRegionSpecification(query.CapturedRegion));
+        }
+
         // Pokeball
         if (query.PokeballId.HasValue)
         {
@@ -173,6 +183,16 @@ public static class PokemonQueryService
         if (query.AnyTagNames?.Length > 0)
         {
             specifications.Add(new AnyTagNamesSpecification(query.AnyTagNames));
+        }
+
+        if (query.Sid.HasValue)
+        {
+            specifications.Add(new SidSpecification(query.Sid.Value));
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.OtName))
+        {
+            specifications.Add(new OtNameSpecification(query.OtName.Trim()));
         }
 
         if (query.ExcludedTagIds?.Length > 0)

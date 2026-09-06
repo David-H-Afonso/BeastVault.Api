@@ -171,6 +171,38 @@ public class ShinySpecification : IPokemonSpecification
     }
 }
 
+public sealed class OriginRegionSpecification(string region) : IPokemonSpecification
+{
+    public IQueryable<PokemonEntity> Apply(IQueryable<PokemonEntity> query)
+    {
+        var speciesIds = PokemonGameInfoService.GetSpeciesIdsForRegion(region);
+        return speciesIds.Count == 0 ? query.Where(_ => false) : query.Where(p => speciesIds.Contains(p.SpeciesId));
+    }
+}
+
+public sealed class CapturedRegionSpecification(string region) : IPokemonSpecification
+{
+    public IQueryable<PokemonEntity> Apply(IQueryable<PokemonEntity> query)
+    {
+        var gameIds = PokemonGameInfoService.GetGameIdsForRegion(region);
+        return gameIds.Count == 0 ? query.Where(_ => false) : query.Where(p => gameIds.Contains(p.OriginGame));
+    }
+}
+
+public sealed class SidSpecification(int sid) : IPokemonSpecification
+{
+    public IQueryable<PokemonEntity> Apply(IQueryable<PokemonEntity> query) => query.Where(p => p.Sid == sid);
+}
+
+public sealed class OtNameSpecification(string otName) : IPokemonSpecification
+{
+    public IQueryable<PokemonEntity> Apply(IQueryable<PokemonEntity> query)
+    {
+        var normalized = otName.ToLower();
+        return query.Where(p => p.OtName.ToLower().Contains(normalized));
+    }
+}
+
 public class FavoriteSpecification : IPokemonSpecification
 {
     private readonly bool _favorite;

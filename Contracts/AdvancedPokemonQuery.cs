@@ -81,6 +81,12 @@ public record AdvancedPokemonQuery
     /// </summary>
     public int? CapturedGeneration { get; init; }
 
+    /// <summary>Filter by the region where the species was introduced.</summary>
+    public string? OriginRegion { get; init; }
+
+    /// <summary>Filter by the region associated with the Pokémon's origin game.</summary>
+    public string? CapturedRegion { get; init; }
+
     #endregion
 
     #region Equipment Filters
@@ -134,6 +140,14 @@ public record AdvancedPokemonQuery
     /// </summary>
     [Range(1, 100)]
     public int? MaxLevel { get; init; }
+
+    /// <summary>Filter by the displayed Secret ID.</summary>
+    [Range(0, 999999)]
+    public int? Sid { get; init; }
+
+    /// <summary>Filter by original trainer name (partial, case-insensitive).</summary>
+    [MaxLength(12)]
+    public string? OtName { get; init; }
 
     #endregion
 
